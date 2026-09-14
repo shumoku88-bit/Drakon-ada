@@ -75,8 +75,66 @@ def _rewrite_action(db: sqlite3.Connection, old_text: str, new_text: str) -> Non
     )
 
 
+def _widen_fold_corridor(db: sqlite3.Connection) -> None:
+    """Keep the countdown trunk fixed; expand only its right-hand loop corridor.
+
+    This is a fixture-specific topology, not a general editor layout engine.
+    Pinned icon.if uses x+w+a for its right junction; icon.arrow uses
+    x-w for its upper return and x-a for its lower entry. Preserve both
+    connections while moving the fold lane and the arrow's right lane.
+    """
+    def one(kind: str, text: str | None = None) -> dict:
+        query = "select item_id, x, y, w, h, a, b from items where type=?"
+        args = [kind]
+        if text is not None:
+            query += " and text=?"
+            args.append(text)
+        rows = db.execute(query, args).fetchall()
+        if len(rows) != 1:
+            raise ValueError(f"Expected one {kind} in countdown loop topology")
+        return dict(zip(("id", "x", "y", "w", "h", "a", "b"), rows[0]))
+
+    fold = one("action", FOLD_ACTION)
+    branch = one("if")
+    arrow = one("arrow")
+    trunk = branch["x"]
+    lane = fold["x"]
+    verticals = db.execute(
+        "select item_id, x, y, h from items where type='vertical'"
+    ).fetchall()
+    fold_vertical = [v for v in verticals if v[1] == lane]
+    main_vertical = [v for v in verticals if v[1] == trunk]
+    if not (
+        len(verticals) == 2 and len(fold_vertical) == len(main_vertical) == 1
+        and trunk < lane < arrow["x"]
+        and branch["x"] + branch["w"] + branch["a"] == lane
+        and arrow["b"] == 0
+        and arrow["x"] - arrow["w"] == trunk
+        and arrow["x"] - arrow["a"] == lane
+        and fold_vertical[0][2] == branch["y"]
+        and sum(fold_vertical[0][2:]) == arrow["y"] + arrow["h"]
+        and branch["y"] < fold["y"] - fold["h"]
+        and fold["y"] + fold["h"] < arrow["y"] + arrow["h"]
+        and main_vertical[0][2] < arrow["y"] < branch["y"]
+        and main_vertical[0][2] + main_vertical[0][3] > arrow["y"] + arrow["h"]
+    ):
+        raise ValueError("Unexpected countdown loop topology; refusing partial translation")
+
+    # Smallest nonnegative grid translations with one grid cell on each side.
+    clearance = _UPSTREAM_SNAP
+    shift = _snap_up(max(0, trunk + clearance + fold["w"] - lane))
+    outer_shift = _snap_up(max(
+        0, lane + shift + fold["w"] + clearance - arrow["x"]
+    ))
+    db.execute("update items set x=x+? where item_id in (?, ?)",
+               (shift, fold["id"], fold_vertical[0][0]))
+    db.execute("update items set a=a+? where item_id=?", (shift, branch["id"]))
+    db.execute("update items set x=x+?, w=w+?, a=a+? where item_id=?",
+               (outer_shift, outer_shift, outer_shift - shift, arrow["id"]))
+
+
 def materialize(destination: Path) -> Path:
-    """Copy the qualified countdown geometry and rewrite its semantic content."""
+    """Copy countdown, rewrite semantics, and widen its temporary fold corridor."""
     destination = Path(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(TEMPLATE, destination)
@@ -88,6 +146,7 @@ def materialize(destination: Path) -> Path:
         _rewrite_action(db, "Count := Amount;", INIT_ACTION)
         db.execute("update items set text='Index <= 4' where type='if'")
         _rewrite_action(db, "Count := Count - 1;", FOLD_ACTION)
+        _widen_fold_corridor(db)
         db.execute("update diagram_info set value=? where name='ada'", (ARRAY_METADATA,))
         db.commit()
     return destination

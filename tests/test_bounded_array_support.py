@@ -69,6 +69,37 @@ class BoundedArraySupportTests(unittest.TestCase):
         self.assertEqual(geometry[INIT_ACTION], (50, 30))
         self.assertEqual(geometry[FOLD_ACTION], (110, 30))
 
+    def test_fitted_fold_has_clearance_and_connected_graph(self):
+        with sqlite3.connect(self.source) as db:
+            x, y, w, h = db.execute(
+                "select x, y, w, h from items where type='action' and text=?",
+                (FOLD_ACTION,),
+            ).fetchone()
+            verticals = db.execute(
+                "select x, y, h from items where type='vertical'"
+            ).fetchall()
+            ax, ay, aw, ah, aa = db.execute(
+                "select x, y, w, h, a from items where type='arrow'"
+            ).fetchone()
+            bx, by, bw, ba = db.execute(
+                "select x, y, w, a from items where type='if'"
+            ).fetchone()
+            coords = db.execute("select x, y, w, h, a from items").fetchall()
+
+        self.assertEqual((w, h), (110, 30))
+        self.assertTrue(all(value % 10 == 0 for row in coords for value in row))
+        lanes = verticals + [(ax, ay, ah)]
+        adjacent = [lx for lx, ly, lh in lanes
+                    if lx != x and ly < y + h and ly + lh > y - h]
+        self.assertEqual(len(adjacent), 2)
+        self.assertEqual(x - w - max(lx for lx in adjacent if lx < x), 10)
+        self.assertEqual(min(lx for lx in adjacent if lx > x) - (x + w), 10)
+        self.assertEqual(bx + bw + ba, x)
+        self.assertEqual(ax - aw, bx)
+        self.assertEqual(ax - aa, x)
+        self.assertIn((x, by, ay + ah - by), verticals)
+        self.generate()  # Includes upstream graph verification before Ada generation.
+
     def test_non_array_call_syntax_remains_rejected(self):
         with sqlite3.connect(self.source) as db:
             db.execute(
