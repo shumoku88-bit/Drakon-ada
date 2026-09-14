@@ -64,7 +64,7 @@ class LoamBalanceProbeTests(unittest.TestCase):
         self.assertIn("Admit_Three_Changes", begin_labels)
         self.assertNotIn("Absolute_Value", begin_labels)
         self.assertEqual(condition, "First + Second + Third = 0")
-        self.assertEqual(actions, {"Accepted := True;", "Accepted := False;"})
+        self.assertEqual(actions, {probe.TRUE_ACTION, probe.FALSE_ACTION})
         self.assertEqual(metadata, probe.ADA_METADATA)
 
     def test_generation_matches_bounded_probe_golden(self):
@@ -86,7 +86,9 @@ class LoamBalanceProbeTests(unittest.TestCase):
         body = (self.out / "loam_balance_admission.adb").read_text()
         spec = (self.out / "loam_balance_admission.ads").read_text()
         self.assertIn("if First + Second - Third = 0 then", body)
-        self.assertIn("Accepted = (First + Second + Third = 0)", spec)
+        self.assertIn(
+            "Total = First + Second + Third and then Accepted = (Total = 0)", spec
+        )
 
 
 if __name__ == "__main__":
