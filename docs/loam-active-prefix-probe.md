@@ -82,12 +82,17 @@ Four negative controls compile and then fail proof:
 
 ## Visual boundary and stop rule
 
-The candidate retains Phase A1's actual GUI-fitted action dimensions and 10/10
-corridor clearance. Running **Edit > Tidy up** in the Mac DRAKON Editor left the
-candidate geometry unchanged, including the `Index <= Length` decision at
-`w=60, h=20`. Headless geometry is not used as visual evidence.
+The first human review found one remaining visual failure: `Index <= Length`
+was crowded horizontally in the inherited `w=60` decision diamond. Actual Mac
+Tk measurement with the Editor's Menlo 14 font gives text width 120 and height
+17. Applying pinned `p.measure_text` padding and `if.fit` slope allowance gives
+the smallest 10-unit-grid half-size `w=80, h=20`. The decision center remains
+`(180,240)` and its branch arm changes from `a=90` to `a=70`, preserving the
+connected right endpoint at x=330. Action geometry, trunk, fold lane, loopback,
+10/10 action clearance and Phase A1 remain unchanged. Headless geometry is not
+used as visual evidence.
 
-Human review must now judge text fit, loopback, readability of the Length
+Human re-review must now judge text fit, loopback, readability of the Length
 condition, reading flow and whether the active-prefix distinction repays its
 cognitive cost. Do not promote this file to canonical source or run final full
 qualification until that review is approved. If the distinction makes the

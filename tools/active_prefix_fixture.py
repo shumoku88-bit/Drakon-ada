@@ -11,6 +11,23 @@ INIT_ACTION = "Index := 1;\nTotal := 0;"
 FOLD_ACTION = "Total := Total + Items (Index);\nIndex := Index + 1;"
 CONDITION = "Index <= Length"
 
+# Actual Mac Tk measurement for Menlo 14 used by the review Editor. Mirror the
+# pinned p.measure_text -> if.fit transform only for this candidate decision.
+_GUI_CONDITION_TEXT_WIDTH = 120
+_GUI_CONDITION_TEXT_HEIGHT = 17
+_GRID = 10
+_FIT_PADDING = 10
+
+
+def _snap_up(value: int) -> int:
+    return ((value + _GRID - 1) // _GRID) * _GRID
+
+
+def gui_condition_fit() -> tuple[int, int]:
+    action_w = _snap_up(_GUI_CONDITION_TEXT_WIDTH // 2) + _FIT_PADDING
+    action_h = _snap_up(_GUI_CONDITION_TEXT_HEIGHT // 2) + _FIT_PADDING
+    return _snap_up(action_w + action_h // 2), action_h
+
 PREFIX_CASES = (
     "(Length = 0 and then Total = 0) or else "
     "(Length = 1 and then Total = Items (1)) or else "
@@ -52,7 +69,23 @@ def materialize(destination: Path) -> Path:
             "update items set text='Fold_Active_Prefix' "
             "where type='beginend' and text='Fold_Four'"
         )
-        db.execute("update items set text=? where type='if'", (CONDITION,))
+        decision = db.execute(
+            "select item_id,x,w,h,a from items where type='if'"
+        ).fetchall()
+        if len(decision) != 1:
+            raise ValueError("Expected exactly one Phase A1 decision icon")
+        item_id, x, old_w, old_h, old_a = decision[0]
+        endpoint = x + old_w + old_a
+        width, height = gui_condition_fit()
+        if height != old_h:
+            raise ValueError("Decision height change would require vertical reflow")
+        branch = endpoint - x - width
+        if branch < 20:
+            raise ValueError("Fitted decision leaves no legal branch arm")
+        db.execute(
+            "update items set text=?,w=?,h=?,a=? where item_id=?",
+            (CONDITION, width, height, branch, item_id),
+        )
         db.execute(
             "update diagram_info set value=? where name='ada'",
             (ACTIVE_PREFIX_METADATA,),

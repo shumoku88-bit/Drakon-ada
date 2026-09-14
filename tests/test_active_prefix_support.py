@@ -12,6 +12,7 @@ from tools.active_prefix_fixture import (
     CONDITION,
     FOLD_ACTION,
     INIT_ACTION,
+    gui_condition_fit,
     materialize,
 )
 
@@ -90,6 +91,12 @@ class ActivePrefixSupportTests(unittest.TestCase):
             loopback = db.execute(
                 "select x from items where type='arrow'"
             ).fetchone()[0]
+            decision = db.execute(
+                "select x,y,w,h,a from items where type='if'"
+            ).fetchone()
+        self.assertEqual(gui_condition_fit(), (80, 20))
+        self.assertEqual(decision, (180, 240, 80, 20, 70))
+        self.assertEqual(decision[0] + decision[2] + decision[4], fold[0])
         self.assertEqual(fold, (330, 300, 140, 30))
         self.assertEqual((trunk, loopback), (180, 480))
         self.assertEqual(fold[0] - fold[2] - trunk, 10)
