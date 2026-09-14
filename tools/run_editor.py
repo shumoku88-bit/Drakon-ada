@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Run DRAKON Editor with the Repository Browser in an isolated disposable runtime.
 
-This launcher ensures:
-1. Pinned upstream checkout remains strictly clean and unmodified.
-2. An isolated runtime is constructed under ``build/editor-runtime/``.
-3. The Ada/SPARK code generator plugin is installed.
-4. The Repository Browser extension is installed and its catalog is generated.
-5. DRAKON Editor is launched with all command-line arguments preserved.
+Guarantees:
+1. Pinned upstream checkout (.upstream/drakon_editor) remains strictly clean.
+2. The runtime directory (build/editor-runtime/) is deterministically recreated
+   from scratch on every launch, leaving zero stale files.
+3. The Ada/SPARK code generator and Repository Browser extension are installed.
+4. Minimal 2-line hook is injected into the runtime copy of drakon_editor.tcl.
 """
 
 from __future__ import annotations
@@ -52,36 +52,15 @@ def verify_upstream_pinned() -> None:
         )
 
 
-def setup_runtime(force_clean: bool = False) -> Path:
-    """Prepare the disposable runtime under build/editor-runtime/."""
+def setup_runtime() -> Path:
+    """Deterministically construct the disposable runtime under build/editor-runtime/."""
     verify_upstream_pinned()
 
-    if force_clean and RUNTIME_DIR.exists():
+    # Always recreate from scratch to guarantee zero stale files
+    if RUNTIME_DIR.exists():
         shutil.rmtree(RUNTIME_DIR)
 
-    RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
-
-    # Synchronise upstream files into disposable runtime
-    # We copy all files from UPSTREAM without touching .git
-    for item in UPSTREAM.iterdir():
-        if item.name == ".git":
-            continue
-        dest = RUNTIME_DIR / item.name
-        if item.is_dir():
-            if not dest.exists():
-                shutil.copytree(item, dest)
-            else:
-                # Update files within directory
-                for sub in item.rglob("*"):
-                    rel = sub.relative_to(item)
-                    target = dest / rel
-                    if sub.is_file():
-                        target.parent.mkdir(parents=True, exist_ok=True)
-                        if not target.exists() or sub.stat().st_mtime > target.stat().st_mtime:
-                            shutil.copy2(sub, target)
-        else:
-            if not dest.exists() or item.stat().st_mtime > dest.stat().st_mtime:
-                shutil.copy2(item, dest)
+    shutil.copytree(UPSTREAM, RUNTIME_DIR, ignore=shutil.ignore_patterns(".git"))
 
     # 1. Install Ada/SPARK code generator plugin
     ada_src = ROOT / "generator" / "ada.tcl"
@@ -100,20 +79,13 @@ def setup_runtime(force_clean: bool = False) -> Path:
     editor_tcl = RUNTIME_DIR / "drakon_editor.tcl"
     tcl_content = editor_tcl.read_text(encoding="utf-8")
 
-    # Img shim for environments where libtk-img is absent
-    img_shim = """if {[catch {package require Img}]} {\n    package provide Img 1.0\n}\n"""
-    if "package provide Img 1.0" not in tcl_content:
-        tcl_content = img_shim + tcl_content
-
-    # Repository Browser hook right after mw::create_ui
+    img_shim = "if {[catch {package require Img}]} {\n    package provide Img 1.0\n}\n"
     hook = (
         'mw::create_ui\n'
         'source "$script_path/extensions/repository_browser.tcl"\n'
         'repobrowser::install_ui\n'
     )
-    if "repobrowser::install_ui" not in tcl_content:
-        tcl_content = tcl_content.replace("mw::create_ui\n", hook, 1)
-
+    tcl_content = img_shim + tcl_content.replace("mw::create_ui\n", hook, 1)
     editor_tcl.write_text(tcl_content, encoding="utf-8")
 
     # 4. Generate repository catalog for browser tree
@@ -124,37 +96,35 @@ def setup_runtime(force_clean: bool = False) -> Path:
         check=True,
     )
 
-    return RUNTIME_DIR / "drakon_editor.tcl"
+    return editor_tcl
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run DRAKON Editor with Repository Browser in isolated runtime",
+        description="Run DRAKON Editor with Repository Browser in disposable runtime",
         add_help=False,
     )
-    parser.add_argument("--clean", action="store_true", help="Rebuild editor-runtime from scratch")
+    parser.add_argument("--clean", action="store_true", help="Explicitly rebuild runtime (already default)")
     parser.add_argument("--help", "-h", action="store_true", help="Show help message")
 
-    # Split known flags from editor arguments
     args, editor_args = parser.parse_known_args()
 
     if args.help:
         parser.print_help()
-        print("\nAdditional arguments will be passed directly to DRAKON Editor (e.g. diagram.drn).")
+        print("\nAdditional arguments are passed to DRAKON Editor (e.g. file.drn).")
         return
 
-    editor_entry = setup_runtime(force_clean=args.clean)
+    editor_entry = setup_runtime()
 
     env = os.environ.copy()
     env["DRAKON_REPO_ROOT"] = str(ROOT)
 
-    # Look for wish binary
     wish_cmd = shutil.which("wish") or "/usr/local/bin/wish"
     if not Path(wish_cmd).exists():
         raise SystemExit(f"wish binary not found at {wish_cmd}")
 
     cmd = [wish_cmd, str(editor_entry), *editor_args]
-    print(f"Launching DRAKON Editor (runtime: {RUNTIME_DIR}) ...")
+    print(f"Launching DRAKON Editor (disposable runtime: {RUNTIME_DIR}) ...")
     try:
         res = subprocess.run(cmd, env=env)
         sys.exit(res.returncode)

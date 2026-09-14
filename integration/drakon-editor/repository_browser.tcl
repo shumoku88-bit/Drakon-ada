@@ -20,43 +20,21 @@ namespace eval repobrowser {
 
     proc get_repo_root {} {
         variable repo_root
-        if {$repo_root ne ""} {
-            return $repo_root
-        }
+        if {$repo_root ne ""} { return $repo_root }
         if {[info exists ::env(DRAKON_REPO_ROOT)] && $::env(DRAKON_REPO_ROOT) ne ""} {
             set repo_root [file normalize $::env(DRAKON_REPO_ROOT)]
             return $repo_root
         }
-        # Fallback: climb up from runtime script path
         global script_path
-        set candidate [file normalize [file join $script_path ".." ".."]]
-        if {[file exists [file join $candidate "examples"]]} {
-            set repo_root $candidate
-            return $repo_root
-        }
-        set repo_root [pwd]
+        set repo_root [file normalize [file join $script_path ".." ".."]]
         return $repo_root
     }
 
     proc get_catalog_file {} {
         variable catalog_file
-        if {$catalog_file ne ""} {
-            return $catalog_file
-        }
+        if {$catalog_file ne ""} { return $catalog_file }
         global script_path
-        set cand1 [file join $script_path ".." "repository_catalog.json"]
-        if {[file exists $cand1]} {
-            set catalog_file [file normalize $cand1]
-            return $catalog_file
-        }
-        set root [get_repo_root]
-        set cand2 [file join $root "build" "editor-runtime" "repository_catalog.json"]
-        if {[file exists $cand2]} {
-            set catalog_file [file normalize $cand2]
-            return $catalog_file
-        }
-        set cand3 [file join $root "build" "repository_catalog.json"]
-        set catalog_file [file normalize $cand3]
+        set catalog_file [file normalize [file join $script_path "repository_catalog.json"]]
         return $catalog_file
     }
 

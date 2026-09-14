@@ -9,75 +9,65 @@ in-editor Repository Browser treeview.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
 import sqlite3
-import subprocess
 from typing import Any
+from urllib.request import pathname2url
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Directories under build/ that must NEVER be shown in the repository browser.
-SKIP_BUILD_PARTS = {
-    "bin",
-    "obj",
-    "evidence",
-    "generated",
-    "generated-final",
-    "negative",
-    "negative-pairing",
-    "negative-condition-pairing",
-    "negative-pairing-witness",
-    "off-by-one-active-bound",
-    "inactive-tail-folded",
-    "too-narrow-total",
-    "weak-invariant",
-    "wrong-branch",
-    "no-progress",
-    "noop-clean",
-    "editor-runtime",
-}
-
-# Explicit navigation-only metadata for tree organisation.
-# This is explicitly NOT a canonical semantic truth source; it is a UI
-# navigation layout helper that groups related probe and example diagrams.
-NAVIGATION_METADATA: dict[str, dict[str, str]] = {
-    "examples/loam-balance-probe/loam_balance_probe.drn": {
+# Semantic & navigation metadata for repository probes.
+# Keyed by diagram name so navigation does not permanently depend on transient
+# build-directory paths and aligns seamlessly with future canonical promotion.
+PROBE_SPECS: dict[str, dict[str, Any]] = {
+    "Admit_Three_Changes": {
         "group": "LOAM probes",
         "section": "balance",
         "annotation": "→ retained sequence",
     },
-    "examples/loam-bounded-changes-probe/array_fold.drn": {
+    "Fold_Four": {
         "group": "LOAM probes",
         "section": "bounded changes",
         "annotation": "→ active prefix",
     },
-    "examples/loam-active-prefix-probe/active_prefix_fold.drn": {
+    "Fold_Active_Prefix": {
         "group": "LOAM probes",
         "section": "active prefix",
         "annotation": "→ coordinate/quantity pairing",
     },
-    "build/quantity-at-two/quantity_at_two.drn": {
+    "Quantity_At_Two": {
         "group": "LOAM probes",
-        "section": "quantityAt [working]",
+        "section": "quantityAt",
         "annotation": "",
+        # Working candidate priority order when no canonical source exists yet.
+        # Prefers human-approved noop-clean over uncleaned scratch copies.
+        "working_candidates": [
+            "build/quantity-at-two/noop-clean/quantity_at_two.drn",
+            "build/quantity-at-two/quantity_at_two.drn",
+        ],
     },
-    "examples/control-flow/branch/branch.drn": {
+    "Absolute_Value": {
         "group": "Control flow",
         "section": "branch",
         "annotation": "",
     },
-    "examples/control-flow/countdown/countdown.drn": {
+    "Count_Down": {
         "group": "Control flow",
         "section": "countdown",
         "annotation": "",
     },
-    "examples/movement/movement.drn": {
+    "Balanced_Movement": {
         "group": "Movement",
         "section": "movement",
         "annotation": "",
     },
+}
+
+PREFERRED_GROUP_ORDER = ["LOAM probes", "Control flow", "Movement"]
+PREFERRED_SECTION_ORDER = {
+    "LOAM probes": ["balance", "bounded changes", "active prefix", "quantityAt [working]"],
+    "Control flow": ["branch", "countdown"],
 }
 
 
@@ -87,8 +77,6 @@ def table_exists(db: sqlite3.Connection, name: str) -> bool:
     )
     return cursor.fetchone() is not None
 
-
-from urllib.request import pathname2url
 
 def inspect_drn_diagrams(path: Path) -> list[dict[str, Any]]:
     """Read diagram IDs and names from a .drn SQLite file in read-only mode."""
@@ -114,50 +102,66 @@ def discover_canonical_files(root: Path) -> list[Path]:
     return sorted(examples_dir.rglob("*.drn"))
 
 
-def discover_working_files(root: Path) -> list[Path]:
-    """Find positive working .drn files under build/."""
-    build_dir = root / "build"
-    if not build_dir.is_dir():
-        return []
+def discover_working_files(root: Path, canonical_diagram_names: set[str]) -> list[Path]:
+    """Find active working copies under build/ that have not yet been promoted to canonical."""
     working: list[Path] = []
-    for path in sorted(build_dir.rglob("*.drn")):
-        parts = set(path.relative_to(build_dir).parts)
-        if parts & SKIP_BUILD_PARTS:
+
+    # Check registered working candidates whose diagrams are not yet in canonical
+    for dia_name, spec in PROBE_SPECS.items():
+        if dia_name in canonical_diagram_names:
             continue
-        working.append(path)
+        for rel_cand in spec.get("working_candidates", []):
+            cand_path = root / rel_cand
+            if cand_path.is_file():
+                working.append(cand_path)
+                break  # Pick highest-priority existing candidate only
+
     return working
 
 
 def discover_all_drn_files(root: Path, include_build: bool = True) -> list[dict[str, Any]]:
-    """Discover all eligible .drn files with their metadata and diagrams."""
+    """Discover all eligible .drn files with their resolved metadata and diagrams."""
     results: list[dict[str, Any]] = []
+    seen_diagram_names: set[str] = set()
 
+    # 1. Canonical files under examples/ (highest priority)
     for path in discover_canonical_files(root):
         rel = str(path.relative_to(root))
         diagrams = inspect_drn_diagrams(path)
-        nav = NAVIGATION_METADATA.get(rel, {})
+        for dia in diagrams:
+            seen_diagram_names.add(dia["name"])
+
+        first_name = diagrams[0]["name"] if diagrams else ""
+        spec = PROBE_SPECS.get(first_name, {})
+
         results.append({
             "rel_path": rel,
             "abs_path": str(path.resolve()),
             "kind": "canonical",
-            "group": nav.get("group", derive_group(rel)),
-            "section": nav.get("section", derive_section(rel)),
-            "annotation": nav.get("annotation", ""),
+            "group": spec.get("group") or derive_group(rel),
+            "section": spec.get("section") or derive_section(rel),
+            "annotation": spec.get("annotation", ""),
             "diagrams": diagrams,
         })
 
+    # 2. Working files under build/ (only those not yet promoted)
     if include_build:
-        for path in discover_working_files(root):
+        for path in discover_working_files(root, seen_diagram_names):
             rel = str(path.relative_to(root))
             diagrams = inspect_drn_diagrams(path)
-            nav = NAVIGATION_METADATA.get(rel, {})
+            first_name = diagrams[0]["name"] if diagrams else ""
+            spec = PROBE_SPECS.get(first_name, {})
+
+            base_section = spec.get("section") or derive_section(rel)
+            section = f"{base_section} [working]" if not base_section.endswith("[working]") else base_section
+
             results.append({
                 "rel_path": rel,
                 "abs_path": str(path.resolve()),
                 "kind": "working",
-                "group": nav.get("group", derive_group(rel)),
-                "section": nav.get("section", derive_section(rel)),
-                "annotation": nav.get("annotation", ""),
+                "group": spec.get("group") or "Build [working]",
+                "section": section,
+                "annotation": spec.get("annotation", ""),
                 "diagrams": diagrams,
             })
 
@@ -173,8 +177,6 @@ def derive_group(rel_path: str) -> str:
         if first == "control-flow":
             return "Control flow"
         return first.replace("-", " ").title()
-    if len(parts) > 1 and parts[0] == "build":
-        return "Build [working]"
     return "Repository"
 
 
@@ -195,21 +197,14 @@ def build_catalog_tree(root: Path, include_build: bool = True) -> dict[str, Any]
         sec = item["section"]
         groups.setdefault(grp, {}).setdefault(sec, []).append(item)
 
-    # Order groups: "LOAM probes" first, then "Control flow", "Movement", others
-    preferred_order = ["LOAM probes", "Control flow", "Movement"]
     all_group_names = sorted(
         groups.keys(),
-        key=lambda g: (preferred_order.index(g) if g in preferred_order else 999, g),
+        key=lambda g: (PREFERRED_GROUP_ORDER.index(g) if g in PREFERRED_GROUP_ORDER else 999, g),
     )
-
-    preferred_section_order = {
-        "LOAM probes": ["balance", "bounded changes", "active prefix", "quantityAt [working]"],
-        "Control flow": ["branch", "countdown"],
-    }
 
     nodes: list[dict[str, Any]] = []
 
-    # Root node: "Drakon-ada"
+    # Root repository node
     repo_node_id = "root:repo"
     nodes.append({
         "id": repo_node_id,
@@ -230,22 +225,17 @@ def build_catalog_tree(root: Path, include_build: bool = True) -> dict[str, Any]
         })
 
         sections = groups[grp_name]
-        sec_pref = preferred_section_order.get(grp_name, [])
+        sec_pref = PREFERRED_SECTION_ORDER.get(grp_name, [])
         sorted_sec_names = sorted(
             sections.keys(),
             key=lambda s: (sec_pref.index(s) if s in sec_pref else 999, s),
         )
+
         for sec_name in sorted_sec_names:
             files = sections[sec_name]
-            # If section has only 1 file and section name is non-empty,
-            # section can host the file's diagrams directly or file nodes.
-            # To strictly follow:
-            # ├─ LOAM probes
-            # │  ├─ balance
-            # │  │  └─ Loam_Balance_Probe
             sec_node_id = f"sec:{grp_node_id}:{sec_name.replace(' ', '_').lower()}"
-            first_annot = files[0]["annotation"] if files and files[0]["annotation"] else ""
-            sec_text = f"{sec_name} {first_annot}".strip() if first_annot else sec_name
+            annot = files[0].get("annotation", "") if files else ""
+            sec_text = f"{sec_name} {annot}".strip() if annot else sec_name
 
             nodes.append({
                 "id": sec_node_id,
@@ -257,9 +247,8 @@ def build_catalog_tree(root: Path, include_build: bool = True) -> dict[str, Any]
 
             for f in files:
                 rel = f["rel_path"]
-                # If multiple files under section, add a file node
-                file_node_id = f"file:{rel}"
                 if len(files) > 1:
+                    file_node_id = f"file:{rel}"
                     nodes.append({
                         "id": file_node_id,
                         "parent": sec_node_id,
@@ -277,9 +266,8 @@ def build_catalog_tree(root: Path, include_build: bool = True) -> dict[str, Any]
                 for dia in f["diagrams"]:
                     dia_id = dia["diagram_id"]
                     dia_name = dia["name"]
-                    node_id = f"dia:{rel}:{dia_id}"
                     nodes.append({
-                        "id": node_id,
+                        "id": f"dia:{rel}:{dia_id}",
                         "parent": diagram_parent,
                         "text": dia_name,
                         "type": "diagram",

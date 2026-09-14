@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -33,20 +32,20 @@ class RepositoryDiscoveryTests(unittest.TestCase):
         for exp in expected:
             self.assertIn(exp, rel_paths)
 
-    def test_discovery_excluded_build_dirs(self) -> None:
-        working = rb.discover_working_files(ROOT)
-        for path in working:
-            parts = set(path.relative_to(ROOT / "build").parts)
-            self.assertFalse(
-                parts & rb.SKIP_BUILD_PARTS,
-                f"Discovered working file in excluded build dir: {path}",
-            )
-
-    def test_positive_working_build(self) -> None:
-        working = rb.discover_working_files(ROOT)
+    def test_positive_working_build_resolves_noop_clean(self) -> None:
+        """Verify that working resolution prefers human-approved noop-clean."""
+        working = rb.discover_working_files(ROOT, canonical_diagram_names=set())
         rel_paths = {str(p.relative_to(ROOT)) for p in working}
-        # Check that positive working diagram is picked up
-        self.assertIn("build/quantity-at-two/quantity_at_two.drn", rel_paths)
+        self.assertIn("build/quantity-at-two/noop-clean/quantity_at_two.drn", rel_paths)
+        # Unapproved / intermediate copies must not be exposed
+        self.assertNotIn("build/quantity-at-two/quantity_at_two.drn", rel_paths)
+        self.assertNotIn("build/quantity-at-two/negative-pairing/quantity_at_two.drn", rel_paths)
+
+    def test_canonical_promotion_overrides_working(self) -> None:
+        """If a diagram name is discovered in canonical examples/, working candidate is skipped."""
+        working = rb.discover_working_files(ROOT, canonical_diagram_names={"Quantity_At_Two"})
+        rel_paths = {str(p.relative_to(ROOT)) for p in working}
+        self.assertNotIn("build/quantity-at-two/noop-clean/quantity_at_two.drn", rel_paths)
 
     def test_diagram_names(self) -> None:
         probe = ROOT / "examples" / "loam-active-prefix-probe" / "active_prefix_fold.drn"
@@ -161,7 +160,7 @@ class UpstreamCleanTests(unittest.TestCase):
 
 class RuntimeSetupTests(unittest.TestCase):
     def test_setup_runtime_construction(self) -> None:
-        entry = run_editor.setup_runtime(force_clean=False)
+        entry = run_editor.setup_runtime()
         self.assertTrue(entry.exists())
 
         runtime_dir = ROOT / "build/editor-runtime"
@@ -176,7 +175,7 @@ class RuntimeSetupTests(unittest.TestCase):
 
     def test_end_to_end_repository_browser(self) -> None:
         """Headless verification of notebook, tree population, and node activation."""
-        run_editor.setup_runtime(force_clean=False)
+        run_editor.setup_runtime()
 
         test_script = f"""
         after 150 {{

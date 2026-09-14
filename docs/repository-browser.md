@@ -16,13 +16,16 @@ To preserve reproducibility and respect the repository setup invariant:
 
 1. **Clean Upstream**:
    `.upstream/drakon_editor` is locked to commit `a22609c4e5b1766c953cbfa2fa2234e69e38f9bd` and is **never modified**.
-2. **Disposable Runtime**:
-   `tools/run_editor.py` creates or refreshes an isolated runtime copy under `build/editor-runtime/`.
+2. **Deterministic Disposable Runtime**:
+   `tools/run_editor.py` completely recreates an isolated runtime copy under `build/editor-runtime/` on each launch, leaving zero stale files.
 3. **Extension & Plugin Injection**:
    - `generator/ada.tcl` is placed in `build/editor-runtime/generators/ada.tcl`.
    - `integration/drakon-editor/repository_browser.tcl` is placed in `build/editor-runtime/extensions/repository_browser.tcl`.
    - A minimal 2-line hook is added after `mw::create_ui` in the runtime copy of `drakon_editor.tcl` to unpack the left pane into a `ttk::notebook` with `Repository` and `Current file` tabs.
-4. **No `.drn` Synthesis**:
+4. **Working Copy & Canonical Promotion**:
+   - `quantityAt [working]` resolves to the human-approved `build/quantity-at-two/noop-clean/quantity_at_two.drn`.
+   - The scanner checks canonical diagrams first: when a probe is promoted to `examples/`, it seamlessly overrides the working candidate without temporary-path breakage.
+5. **No `.drn` Synthesis**:
    Diagrams are never copied into a monolithic workspace file. Navigation directly opens each original `.drn` SQLite file.
 
 ---
