@@ -61,7 +61,7 @@ def normalized_kind(ada_kind: str) -> str:
     return "action"
 
 
-def observe(source: Path, source_root: Path, lal=None) -> dict:
+def observe(source: Path, source_root: Path, charset: str = "utf-8", lal=None) -> dict:
     source = source.resolve()
     source_root = source_root.resolve()
     if not source.is_file():
@@ -69,7 +69,7 @@ def observe(source: Path, source_root: Path, lal=None) -> dict:
 
     source_path = relative_source_path(source, source_root)
     lal = lal or load_libadalang()
-    context = lal.AnalysisContext()
+    context = lal.AnalysisContext(charset=charset)
     unit = context.get_from_file(str(source))
 
     if unit.diagnostics:
@@ -111,6 +111,7 @@ def observe(source: Path, source_root: Path, lal=None) -> dict:
             "name": "libadalang",
             "version": getattr(lal, "__version__", "unknown"),
         },
+        "options": {"charset": charset},
         "source": {
             "path": source_path,
             "sha256": hashlib.sha256(source_bytes).hexdigest(),
@@ -135,6 +136,11 @@ def parse_args(argv=None):
         help="root used for stable source identity (default: Drakon-ada root)",
     )
     parser.add_argument(
+        "--charset",
+        default="utf-8",
+        help="source charset passed explicitly to Libadalang (default: utf-8)",
+    )
+    parser.add_argument(
         "--pretty", action="store_true", help="pretty-print JSON for human inspection"
     )
     return parser.parse_args(argv)
@@ -143,7 +149,7 @@ def parse_args(argv=None):
 def main(argv=None) -> int:
     args = parse_args(argv)
     try:
-        observation = observe(args.source, args.source_root)
+        observation = observe(args.source, args.source_root, args.charset)
     except ObservationError as exc:
         print(f"observe_ada: {exc}", file=sys.stderr)
         return 2
