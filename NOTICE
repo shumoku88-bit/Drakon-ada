@@ -1,0 +1,28 @@
+Drakon-ada — independent Ada/SPARK generator plugin
+
+New Drakon-ada contributions are licensed under MIT; see LICENSE.
+
+This project uses the official DRAKON Editor by Stepan Mitkin and contributors:
+https://github.com/stepan-mitkin/drakon_editor
+Pinned commit: a22609c4e5b1766c953cbfa2fa2234e69e38f9bd
+
+Authors listed in the pinned readme.html:
+Stepan Mitkin, Alexander Ilyin, Maas-Maarten Zeeman, Vasil Dyadov,
+and Vasili Bachiashvili.
+
+The headless bootstrap in integration/drakon-editor/generate.tcl is adapted
+from drakon_gen.tcl and scripts/generators.tcl. Registration, callback and
+printing patterns in generator/ada.tcl follow generators/go.tcl and
+scripts/generators.tcl. The synthetic movement diagram uses the upstream
+SQLite document format. Upstream graph/tree normalization is loaded from a
+separately fetched checkout, not vendored here.
+
+The pinned upstream readme.html declares DRAKON Editor PUBLIC DOMAIN except
+third-party components including pdf4tcl and Liberation fonts. This is not
+an MIT license over upstream, nor a change to the status of its material.
+No pdf4tcl implementation, font assets or macOS launcher code is included in
+this source-only plugin repository. Upstream launcher files have separate
+copyright headers that must be clarified before bundling them.
+
+See docs/licensing.md for exact evidence, exceptions and distribution scope.
+Upstream authors do not thereby endorse this independent project.

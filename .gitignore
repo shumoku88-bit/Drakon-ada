@@ -1,0 +1,6 @@
+/.upstream/
+/build/
+__pycache__/
+*.pyc
+*.drn.bak
+.DS_Store
