@@ -48,9 +48,10 @@ In `scripts/generators.tcl`:
 The optional `if_block_end` callback (line 2328) lets Ada emit `end if;` separately
 from `block_close` emitting `end loop;`. No printer patch is needed.
 If normalization fails, our fallback callbacks raise an error. No goto fallback.
-Movement is straight-line; general if/loop support is **not certified** by this
-example. Foreach, select lowering, loop annotations and broader icon support are
-out of this first slice. No forward-goto decision has been made or is needed.
+Movement is straight-line; general if/loop support is **not certified** by that
+example. The subsequent [control-flow step](control-flow.md) qualifies two minimal
+examples and explicit anchored loop annotations. Foreach, select lowering and
+broader icon support remain out of scope. No forward-goto decision has been made or is needed.
 
 ## Fail-closed runner
 
@@ -91,7 +92,8 @@ Observed on Tcl 8.6.18 / Tcl SQLite 3.53.0, in a separate unmodified checkout:
   `wrong # args: should be "gen::p.save_declare_kernel gdb diagram_id lines loop"`.
 
 Thus upstream's full regression suite is **not reported green**. Our nine
-movement-generation tests and full movement gate are separate evidence.
+baseline movement-generation tests and full movement gate are separate evidence.
+The subsequent control-flow extension is documented separately in [control-flow.md](control-flow.md).
 
 ## License boundaries
 

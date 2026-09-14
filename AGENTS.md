@@ -1,7 +1,8 @@
 # Drakon-ada
 
 - Independent plugin for the commit in `upstream.lock`; no upstream patches without evidence.
-- Scope is `examples/movement/` only. Do not start a LOAM migration or import private data.
+- Preserve checkpoint `6f179ac`. Current scope: `examples/movement/` and minimal
+  `examples/control-flow/` qualification. Do not start a LOAM migration or import private data.
 - Control flow/assignments: DRAKON `.drn`; semantic contracts: explicit `ada` property;
   Ada/SPARK syntax/restrictions: shared generator/profile. Never infer canonical contracts.
 - Generated Ada is derived. Fix the sources and regenerate; never hand-edit generated code.

@@ -21,7 +21,9 @@ sqlite3 examples/movement/movement.drn \
 ```
 
 Its schema-1 fields are `schema`, `profile`, `package`, `declarations`, `parameters`
-and `post`. The example has explicit declarations:
+and `post`. Movement keeps schema 1 unchanged. The control-flow step adds an
+opt-in [schema 2](control-flow.md) for explicit loop annotations and termination.
+The movement example has explicit declarations:
 
 ```text
 {integer Quantity -2000000 2000000}
@@ -70,8 +72,10 @@ No generated contract is adopted without an explicit source change. There is no
 AI inference in generation. Do not claim that future general Ada expressions
 can be safely validated by the current small whitelist.
 
-Loop invariants, variants, arbitrary Pre/Global/Depends metadata, richer types,
-and parameter-icon integration are future schema work, not implicit features.
+The control-flow step explicitly adds anchored loop invariants/variants and
+Always_Terminates in schema 2; they are not inferred from diagrams. Arbitrary
+Pre/Global/Depends metadata, richer types and parameter-icon integration remain
+future schema work, not implicit features.
 A custom property-editing GUI has not been added; SQLite editing is currently
 required for metadata. Editor save/reopen preservation must be tested before
 claiming an end-to-end GUI authoring workflow.

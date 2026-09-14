@@ -78,4 +78,5 @@ result = run(['gnatprove', '-P', negative / 'negative.gpr', *proof_flags],
              BUILD / 'evidence/negative-proof.txt', success=False)
 if result.returncode == 0 or 'postcondition might fail' not in result.stdout:
     raise SystemExit('Negative proof control did not fail for the expected reason')
-print('PASS: generation, compile, non-vacuous proof, runtime, negative proof control')
+run([sys.executable, 'tools/verify_control_flow.py'], BUILD / 'evidence/control-flow.txt')
+print('PASS: movement and control-flow generation, compile, proof, runtime, negative controls')

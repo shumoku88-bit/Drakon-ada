@@ -49,7 +49,7 @@ The command **deletes `build/`**, then:
 
 1. Fetches the exact editor commit into ignored `.upstream/drakon_editor` and
    installs the plugin without modifying tracked upstream files.
-2. Runs nine generation tests, including deterministic golden output, independent
+2. Runs sixteen generation tests, including deterministic golden output, independent
    diagram/metadata changes, profile behavior and rejected invalid inputs.
 3. Regenerates Ada from `examples/movement/movement.drn` into `build/generated/`.
 4. Builds the generated package and runtime driver with assertions and overflow
@@ -62,9 +62,14 @@ The command **deletes `build/`**, then:
 7. Mutates the **diagram**, regenerates into a separate directory, confirms it
    compiles, and requires GNATprove to fail on the deliberately wrong postcondition.
 
-Logs are retained in `build/evidence/`. The proof target is the generated Movement
-package, not `Ada.Text_IO` or the test driver. There are no imported helper
-implementations or external axioms in the proof target.
+8. Runs `tools/verify_control_flow.py`: generates the two minimal branch/loop
+   examples, compiles them, proves all 11 target checks, exhausts their 32 valid
+   inputs, and requires three additional source mutations to fail proof.
+
+Logs are retained in `build/evidence/` and `build/control-flow/evidence/`.
+Proof targets are the generated Movement, Branch and Countdown packages, not
+`Ada.Text_IO` or the test drivers. There are no imported helper implementations
+or external axioms in these targets. See [control-flow.md](control-flow.md).
 
 For generation only (does NOT establish the full success criteria):
 

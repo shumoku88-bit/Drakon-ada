@@ -13,7 +13,9 @@ Upstream commit: `a22609c4e5b1766c953cbfa2fa2234e69e38f9bd`.
 | Runtime test | PASS; all 1,000,000 valid Amount values |
 | Clean checkout reproduction | PASS; disposable clean Git clone, fresh upstream fetch, full gate, clean Git status; installed PATH toolchain reused |
 
-Generation suite: **9 tests passed**.
+Baseline generation suite: **9 tests passed**. The subsequent
+[control-flow step](control-flow.md) extends this to 16 tests and adds 11 proved
+checks in Branch/Countdown without changing the movement target or its golden output.
 
 GNATprove command (FSF 16.1.0):
 
@@ -60,8 +62,9 @@ as a substitute.
 
 - Full upstream unit/regeneration suites fail independently at the pin; detailed
   failures are recorded in [upstream-audit.md](upstream-audit.md).
-- Movement is straight-line. Structured if/loop callbacks exist, but general
-  if/loop generation and invariant/termination metadata are not qualified here.
+- Movement is straight-line. The subsequent [control-flow step](control-flow.md)
+  qualifies minimal if/loop examples with explicit invariant/termination metadata;
+  arbitrary control-flow combinations are still not generally qualified.
 - GUI editing/metadata round-trip has not been tested.
 - Clean checkout uses a preinstalled toolchain; clean-machine installation,
   other operating systems, and hosted CI are not qualified.

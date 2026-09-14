@@ -14,7 +14,10 @@ The headless bootstrap in integration/drakon-editor/generate.tcl is adapted
 from drakon_gen.tcl and scripts/generators.tcl. Registration, callback and
 printing patterns in generator/ada.tcl follow generators/go.tcl and
 scripts/generators.tcl. The synthetic movement diagram uses the upstream
-SQLite document format. Upstream graph/tree normalization is loaded from a
+SQLite document format. Minimal branch/loop diagram layout patterns follow
+upstream docs/AutoHotkey/Diagrams from Documentation/6 (if).drn and
+10 (Check-Do loop).drn, with new synthetic Ada contracts/algorithms.
+Upstream graph/tree normalization is loaded from a
 separately fetched checkout, not vendored here.
 
 The pinned upstream readme.html declares DRAKON Editor PUBLIC DOMAIN except
