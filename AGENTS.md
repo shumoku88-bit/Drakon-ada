@@ -1,18 +1,20 @@
 # Drakon-ada
 
-- Independent plugin for the commit in `upstream.lock`; no upstream patches without evidence.
-- Preserve checkpoint `6f179ac`. Current scope: `examples/movement/` and minimal
-  `examples/control-flow/` qualification. Do not start a LOAM migration or import private data.
-- Control flow/assignments: DRAKON `.drn`; semantic contracts: explicit `ada` property;
-  Ada/SPARK syntax/restrictions: shared generator/profile. Never infer canonical contracts.
-- Generated Ada is derived. Fix the sources and regenerate; never hand-edit generated code.
-- Reuse upstream nogoto normalization. No goto fallback, assumptions, suppressions or hidden proof exclusions.
-- `python3 tools/verify.py` is the complete gate; it deletes `build/`.
-  `python3 tools/check_clean.py` tests a disposable clean Git clone.
-- Missing proof tools or failing upstream regressions are not a successful skipped check.
-- Report target VC coverage, actual proof totals and limitations, not just process exit status.
-- Tool output rules: use `rtk git`, `rtk test`, and `rtk err` where applicable;
-  keep exact raw compiler/proof evidence and failing statuses when needed.
+- Active direction: Ada/SPARK source -> normalized control-flow observation -> DRAKON projection.
+- **Ada/SPARK source is authoritative.** Generated DRAKON and machine-readable observation artifacts are derived and must never become an independent source of program truth.
+- Every projected node must retain exact source traceability. Unsupported or ambiguous source constructs must fail closed or remain explicitly visible; never silently simplify them away.
+- Prefer an established Ada frontend (for example Libadalang) over a handwritten parser. Any frontend choice must be justified by observed capability and licensing/reproduction evidence.
+- Keep a renderer-independent normalized control-flow model between source parsing and DRAKON layout. Do not encode semantic distinctions only because DRAKON needs a drawing convenience.
+- Do not infer contracts, legality, proof, or runtime correctness from diagram shape. Compiler, tests, and GNATprove remain authoritative for those facts.
+- Preserve historical checkpoint `6f179ac` and subsequent qualified DRAKON-to-Ada control-flow work as research/provenance. Do not extend the old generator as the active product path, and do not delete historical evidence without an explicit retirement audit.
+- `hra-n` is the first intended practical observation target, but it remains external. Do not vendor its private/local source or household data into this repository.
+- LOAM is not a migration target or dependency. Existing LOAM probes are historical research assets unless separately promoted by evidence.
+- Independent integration for the commit in `upstream.lock`; no upstream patches without evidence.
+- Reuse upstream/editor capabilities when they help rendering or navigation, but keep source observation semantics outside editor-specific state.
+- Existing `python3 tools/verify.py` and `python3 tools/check_clean.py` qualify the historical generator path only until new observation gates are added. Do not present them as proof of the new direction.
+- Missing proof/parser tools, unsupported syntax, or failing regressions are not successful skipped checks.
+- Report exact observed coverage and limitations, not just process exit status.
+- Tool output rules: use `rtk git`, `rtk test`, and `rtk err` where applicable; keep exact raw compiler/proof evidence and failing statuses when needed.
 - Call AI collaborators `pit` in project documentation, unless a specific model matters.
 - New project work is MIT; retain LICENSE, NOTICE and upstream provenance. See docs/licensing.md.
 - Do not vendor upstream/toolchain assets or change upstream.lock without repeating the license audit.
