@@ -3,9 +3,9 @@
 ## Purpose
 
 Drakon-ada now treats DRAKON as an **observation surface** over Ada/SPARK source.
-The implementation source remains canonical. The observation exists to make
-control-flow shape inspectable by humans and AI while retaining a precise route
-back to the code that produced every visible node and edge.
+The implementation source remains canonical for this active path. The observation
+exists to make control-flow shape inspectable by humans and AI while retaining a
+precise route back to the code that produced every visible node and edge.
 
 This is intentionally not a round-trip editor architecture.
 
@@ -31,7 +31,7 @@ machine-readable    DRAKON
 
 ## Sources of truth
 
-There is one source of program truth:
+For the active observation path there is one source of program truth:
 
 1. Ada/SPARK source files.
 
@@ -205,22 +205,46 @@ The sidecar should allow a reviewer or tool to ask precise questions such as:
 JSON is an acceptable first transport if it remains a serialization of the
 normalized model rather than the model itself.
 
-## Historical generator boundary
+## Suspended generator lane
 
-The existing DRAKON-to-Ada generator and its qualified examples are historical
-research evidence. They taught the project about DRAKON structured control flow,
-Ada/SPARK generation constraints, GNATprove qualification, and editor integration.
+The existing DRAKON-to-Ada/SPARK generator and its qualified examples are a
+**suspended second lane**, not a retired implementation.
 
-They are not the active canonical direction after this pivot.
+They taught the project about DRAKON structured control flow, Ada/SPARK generation
+constraints, GNATprove qualification, and editor integration. They also preserve a
+working base for a possible future authoring mode in which DRAKON is intentionally
+the input representation.
+
+A plausible future workflow is:
+
+```text
+human intent + AI diagram authoring
+             |
+             v
+      reviewed DRAKON
+             |
+             v
+      Ada/SPARK generation
+             |
+             v
+ compiler / tests / GNATprove
+```
+
+This becomes more valuable if AI systems become reliable at constructing precise,
+reviewable diagrams. That possibility is a reason to preserve the generator, not a
+reason to mix its authority model into the active observer today.
 
 The preservation rule is:
 
-- keep qualified checkpoints reproducible while they still provide evidence;
-- do not expand generator capability merely because a new source construct is
-  needed by the observer;
-- do not force the new observer through the old generator representation;
-- archive/retire historical machinery only after an explicit audit shows what
-  evidence would be lost.
+- keep qualified generator checkpoints reproducible;
+- keep generator code, tests, provenance, and useful editor integration intact;
+- do not expand generator capability while observation is the active path unless
+  generator work is explicitly resumed;
+- do not force the observer through the generator's representation;
+- if generator development resumes, state clearly when DRAKON is authoritative
+  for that workflow and keep that boundary distinct from source observation;
+- retire generator machinery only after an explicit decision and evidence audit,
+  not as an accidental consequence of the observation pivot.
 
 ## First practical target: hra-n
 
@@ -244,9 +268,9 @@ this experiment.
 
 ### Phase O0: pivot boundary
 
-- redefine source of truth and contribution rules;
-- preserve old qualification as historical evidence;
-- stop extending DRAKON-to-Ada as the active product direction.
+- redefine source of truth for the active observer;
+- preserve the qualified DRAKON-to-Ada generator as a suspended second lane;
+- stop extending the generator while observation is the active product direction.
 
 ### Phase O1: frontend probe
 
