@@ -32,20 +32,74 @@ class RepositoryDiscoveryTests(unittest.TestCase):
         for exp in expected:
             self.assertIn(exp, rel_paths)
 
-    def test_positive_working_build_resolves_noop_clean(self) -> None:
-        """Verify that working resolution prefers human-approved noop-clean."""
-        working = rb.discover_working_files(ROOT, canonical_diagram_names=set())
-        rel_paths = {str(p.relative_to(ROOT)) for p in working}
-        self.assertIn("build/quantity-at-two/noop-clean/quantity_at_two.drn", rel_paths)
-        # Unapproved / intermediate copies must not be exposed
-        self.assertNotIn("build/quantity-at-two/quantity_at_two.drn", rel_paths)
-        self.assertNotIn("build/quantity-at-two/negative-pairing/quantity_at_two.drn", rel_paths)
+    def test_working_resolution_hermetic_approved_wins(self) -> None:
+        """When both approved and older candidates exist, approved (noop-clean) wins."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_root = Path(tmpdir)
+            approved = fake_root / "build/quantity-at-two/noop-clean/quantity_at_two.drn"
+            older = fake_root / "build/quantity-at-two/quantity_at_two.drn"
+            approved.parent.mkdir(parents=True, exist_ok=True)
+            older.parent.mkdir(parents=True, exist_ok=True)
+            approved.touch()
+            older.touch()
 
-    def test_canonical_promotion_overrides_working(self) -> None:
-        """If a diagram name is discovered in canonical examples/, working candidate is skipped."""
-        working = rb.discover_working_files(ROOT, canonical_diagram_names={"Quantity_At_Two"})
-        rel_paths = {str(p.relative_to(ROOT)) for p in working}
-        self.assertNotIn("build/quantity-at-two/noop-clean/quantity_at_two.drn", rel_paths)
+            working = rb.discover_working_files(fake_root, canonical_diagram_names=set())
+            rel_paths = {str(p.relative_to(fake_root)) for p in working}
+
+            self.assertIn("build/quantity-at-two/noop-clean/quantity_at_two.drn", rel_paths)
+            self.assertNotIn("build/quantity-at-two/quantity_at_two.drn", rel_paths)
+
+    def test_working_resolution_hermetic_fallback_to_older(self) -> None:
+        """When approved candidate is absent, older candidate is used as fallback."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_root = Path(tmpdir)
+            older = fake_root / "build/quantity-at-two/quantity_at_two.drn"
+            older.parent.mkdir(parents=True, exist_ok=True)
+            older.touch()
+
+            working = rb.discover_working_files(fake_root, canonical_diagram_names=set())
+            rel_paths = {str(p.relative_to(fake_root)) for p in working}
+
+            self.assertIn("build/quantity-at-two/quantity_at_two.drn", rel_paths)
+
+    def test_canonical_promotion_suppresses_working_candidates(self) -> None:
+        """When Quantity_At_Two is in canonical examples, all working candidates are suppressed."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_root = Path(tmpdir)
+            approved = fake_root / "build/quantity-at-two/noop-clean/quantity_at_two.drn"
+            older = fake_root / "build/quantity-at-two/quantity_at_two.drn"
+            approved.parent.mkdir(parents=True, exist_ok=True)
+            older.parent.mkdir(parents=True, exist_ok=True)
+            approved.touch()
+            older.touch()
+
+            working = rb.discover_working_files(
+                fake_root, canonical_diagram_names={"Quantity_At_Two"}
+            )
+            self.assertEqual(working, [])
+
+    def test_working_resolution_with_fixture(self) -> None:
+        """Integration test with a valid .drn fixture verifying catalog mapping."""
+        import sqlite3
+        sample_drn = ROOT / "examples/control-flow/branch/branch.drn"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_root = Path(tmpdir)
+            approved = fake_root / "build/quantity-at-two/noop-clean/quantity_at_two.drn"
+            approved.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(sample_drn, approved)
+
+            # Update diagram name to Quantity_At_Two in fixture
+            with sqlite3.connect(approved) as db:
+                db.execute("update diagrams set name = 'Quantity_At_Two'")
+
+            discovered = rb.discover_all_drn_files(fake_root, include_build=True)
+            working_items = [d for d in discovered if d["kind"] == "working"]
+            self.assertEqual(len(working_items), 1)
+            self.assertEqual(working_items[0]["section"], "quantityAt [working]")
+            self.assertEqual(
+                working_items[0]["rel_path"],
+                "build/quantity-at-two/noop-clean/quantity_at_two.drn",
+            )
 
     def test_diagram_names(self) -> None:
         probe = ROOT / "examples" / "loam-active-prefix-probe" / "active_prefix_fold.drn"
