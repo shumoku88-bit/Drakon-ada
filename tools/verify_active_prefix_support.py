@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused proof/runtime gate for the temporary Phase-A2 active-prefix witness."""
+"""Focused proof/runtime gate for the canonical Phase-A2 active-prefix witness."""
 from pathlib import Path
 import os
 import re
@@ -12,12 +12,20 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tools.active_prefix_fixture import LOOP_INVARIANT, WEAK_LOOP_INVARIANT, materialize
-
 os.chdir(ROOT)
 WORK = ROOT / "build/active-prefix-support"
 EVIDENCE = WORK / "evidence"
+CANONICAL_SOURCE = ROOT / "examples/loam-active-prefix-probe/active_prefix_fold.drn"
 SOURCE = WORK / "active_prefix_fold.drn"
+
+LOOP_INVARIANT = (
+    "Index >= 1 and then Index <= Length and then Index <= 4 and then "
+    "((Index = 1 and then Total = 0) or else "
+    "(Index = 2 and then Total = Items (1)) or else "
+    "(Index = 3 and then Total = Items (1) + Items (2)) or else "
+    "(Index = 4 and then Total = Items (1) + Items (2) + Items (3)))"
+)
+WEAK_LOOP_INVARIANT = "Index >= 1 and then Index <= Length"
 PROOF_FLAGS = [
     "--mode=all", "--report=all", "--checks-as-errors=on", "--warnings=error", "--level=2"
 ]
@@ -142,7 +150,7 @@ run(
     [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_active_prefix_support.py", "-v"],
     EVIDENCE / "generation-tests.txt",
 )
-materialize(SOURCE)
+shutil.copyfile(CANONICAL_SOURCE, SOURCE)
 runner = [os.environ.get("TCLSH", "tclsh"), "integration/drakon-editor/generate.tcl"]
 run([*runner, SOURCE, WORK / "generated"], EVIDENCE / "generate.txt")
 runtime_harness(WORK / "active_prefix_fold_test.adb")
