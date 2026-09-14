@@ -1,6 +1,6 @@
 # LOAM balance-admission dogfood probe
 
-Status: **experimental, visual probe earned promotion to canonical source; not yet merged into main**.
+Status: **merged into `main` as the first canonical LOAM dogfood probe**.
 
 This probe asks one narrow question: can the existing DRAKON → Ada/SPARK path
 make the admission shape of LOAM's `BalancedMovement` easier to see without
@@ -63,7 +63,7 @@ sequential action icons followed by a structured branch without modifications.
 The visual probe earned promotion: its diagram demonstrated clear cognitive
 value in showing the explicit calculation and decision gate. The disposable
 Python materializer (`tools/materialize_loam_balance_probe.py`) was deleted, and
-the dedicated diagram is now checked in as the canonical source:
+the dedicated diagram is checked in as the canonical source:
 
 ```text
 examples/loam-balance-probe/loam_balance_probe.drn
