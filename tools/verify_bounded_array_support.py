@@ -8,9 +8,12 @@ import sqlite3
 import subprocess
 import sys
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from tools.bounded_array_fixture import LOOP_INVARIANT, WEAK_LOOP_INVARIANT, materialize
 
-ROOT = Path(__file__).resolve().parents[1]
 os.chdir(ROOT)
 WORK = ROOT / "build/bounded-array-support"
 EVIDENCE = WORK / "evidence"
@@ -109,7 +112,7 @@ def negative_control(label, mutate, expected_diagnostics, runner):
     mutate(source)
     generated = work / "generated"
     run([*runner, source, generated], EVIDENCE / f"{label}-generate.txt")
-    project = work / "negative.gpr"
+    project = work / "array_fold_qualification.gpr"
     generated_project(project)
     run(["gprbuild", "-p", "-c", "-P", project], EVIDENCE / f"{label}-compile.txt")
     result = run(
@@ -157,7 +160,7 @@ runner = [
 run([*runner, SOURCE, WORK / "generated"], EVIDENCE / "generate.txt")
 
 runtime_harness(WORK / "array_fold_test.adb")
-project = WORK / "array_fold.gpr"
+project = WORK / "array_fold_qualification.gpr"
 generated_project(project, include_main=True)
 run(["gprbuild", "-p", "-P", project], EVIDENCE / "compile.txt")
 
