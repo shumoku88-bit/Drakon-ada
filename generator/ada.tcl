@@ -13,16 +13,68 @@ proc identifier {text} {
     return $text
 }
 
-# Deliberately small expression language: no calls, attributes, declarations,
-# pragmas or inline control flow. This is not a general Ada parser.
-proc expression {text} {
+proc declaration_catalog {meta} {
+    set known {Boolean}
+    set arrays {}
+    foreach decl [dict get $meta declarations] {
+        set kind [lindex $decl 0]
+        if {$kind eq "integer" && [llength $decl] == 4} {
+            set type [identifier [lindex $decl 1]]
+        } elseif {$kind eq "subtype" && [llength $decl] == 5} {
+            set type [identifier [lindex $decl 1]]
+            set base [identifier [lindex $decl 2]]
+            if {[lsearch -exact $known $base] < 0} {
+                error "Unknown subtype base: $base"
+            }
+        } elseif {$kind eq "array" && [llength $decl] == 4} {
+            set type [identifier [lindex $decl 1]]
+            set index_type [identifier [lindex $decl 2]]
+            set element_type [identifier [lindex $decl 3]]
+            if {[lsearch -exact $known $index_type] < 0 ||
+                [lsearch -exact $known $element_type] < 0} {
+                error "Array types must reference earlier declarations"
+            }
+            lappend arrays $type
+        } else {
+            error "Unsupported type declaration: $decl"
+        }
+        if {[lsearch -exact $known $type] >= 0} {
+            error "Duplicate type declaration: $type"
+        }
+        lappend known $type
+    }
+    return [dict create known $known arrays $arrays]
+}
+
+proc indexed_parameters {meta catalog} {
+    set arrays [dict get $catalog arrays]
+    set result {}
+    foreach param [dict get $meta parameters] {
+        if {[llength $param] != 3} {error "Expected name, mode, type"}
+        lassign $param pname mode type
+        identifier $pname
+        identifier $type
+        if {[lsearch -exact $arrays $type] >= 0} {
+            lappend result $pname
+        }
+    }
+    return $result
+}
+
+# Deliberately small expression language: no general calls, attributes,
+# declarations, pragmas or inline control flow. Schema 3 may read explicitly
+# declared array parameters through Ada indexing syntax.
+proc expression {text {indexed {}}} {
     if {![regexp {^[A-Za-z0-9_ \t\n()+<>=*/.-]+$} $text] ||
         [string first "--" $text] >= 0 ||
         [regexp -nocase {\m(pragma|assume|suppress|goto|raise|with|declare|begin|end|if|loop|return)\M} $text]} {
         error "Unsupported expression: $text"
     }
-    foreach {match word} [regexp -all -inline {([A-Za-z0-9_]+)\s*\(} $text] {
-        if {[string tolower $word] ni {not and then or else}} {
+    foreach {match word} [regexp -all -inline {([A-Za-z][A-Za-z0-9_]*)\s*\(} $text] {
+        if {[string tolower $word] in {not and then or else}} {
+            continue
+        }
+        if {[lsearch -exact $indexed $word] < 0} {
             error "Unsupported expression: $text"
         }
     }
@@ -39,14 +91,53 @@ proc metadata {db diagram_id} {
     set schema [dict get $raw schema]
     if {$schema eq "2"} {
         lappend keys loop_annotations always_terminates
-    } elseif {$schema ne "1"} {error "Unsupported metadata schema"}
+    } elseif {$schema eq "3"} {
+        lappend keys loop_annotations always_terminates locals
+    } elseif {$schema ne "1"} {
+        error "Unsupported metadata schema"
+    }
     if {[lsort [dict keys $raw]] ne [lsort $keys]} {error "Unexpected metadata keys"}
-    if {$schema eq "2" && [dict get $raw always_terminates] ni {True False}} {
+    if {$schema ne "1" && [dict get $raw always_terminates] ni {True False}} {
         error "always_terminates must be explicit True or False"
     }
     if {[dict get $raw profile] ni {Ada SPARK}} {error "Unsupported profile"}
     identifier [dict get $raw package]
-    expression [dict get $raw post]
+
+    set catalog [declaration_catalog $raw]
+    set known [dict get $catalog known]
+    set indexed [indexed_parameters $raw $catalog]
+
+    set parameter_names {}
+    foreach param [dict get $raw parameters] {
+        if {[llength $param] != 3} {error "Expected name, mode, type"}
+        lassign $param pname mode type
+        set pname [identifier $pname]
+        set type [identifier $type]
+        if {$mode ni {in out {in out}}} {error "Unsupported parameter mode"}
+        if {[lsearch -exact $known $type] < 0} {error "Unknown parameter type: $type"}
+        if {[lsearch -exact $parameter_names $pname] >= 0} {error "Duplicate parameter: $pname"}
+        lappend parameter_names $pname
+    }
+
+    if {$schema eq "3"} {
+        set local_names {}
+        set arrays [dict get $catalog arrays]
+        foreach local [dict get $raw locals] {
+            if {[llength $local] != 2} {error "Expected local name and type"}
+            lassign $local lname ltype
+            set lname [identifier $lname]
+            set ltype [identifier $ltype]
+            if {[lsearch -exact $known $ltype] < 0} {error "Unknown local type: $ltype"}
+            if {[lsearch -exact $arrays $ltype] >= 0} {error "Array locals are not supported"}
+            if {[lsearch -exact $parameter_names $lname] >= 0 ||
+                [lsearch -exact $local_names $lname] >= 0} {
+                error "Duplicate local or parameter name: $lname"
+            }
+            lappend local_names $lname
+        }
+    }
+
+    expression [dict get $raw post] $indexed
     if {[string trim [dict get $raw post]] eq ""} {error "Empty explicit postcondition"}
     return $raw
 }
@@ -86,7 +177,7 @@ proc inspect_tree {tree name} {
         }
     }
 }
-proc annotate {db gdb id meta} {
+proc annotate {db gdb id meta indexed} {
     variable annotation_ids
     set annotation_ids {}
     if {[dict get $meta schema] eq "1"} {return}
@@ -104,14 +195,15 @@ proc annotate {db gdb id meta} {
         if {[lsort [dict keys $annotation]] ne {invariant variant}} {
             error "Expected explicit invariant and variant"
         }
-        set invariant [expression [dict get $annotation invariant]]
+        set invariant [expression [dict get $annotation invariant] $indexed]
         if {[string trim $invariant] eq ""} {error "Empty loop invariant"}
         set variant [dict get $annotation variant]
         if {[llength $variant] != 2 || [lindex $variant 0] ni {Increases Decreases}} {
-            error "Expected variant direction and identifier"
+            error "Expected variant direction and expression"
         }
         lassign $variant direction measure
-        identifier $measure
+        set measure [expression $measure]
+        if {[string trim $measure] eq ""} {error "Empty loop variant"}
         set prefix "pragma Loop_Invariant ($invariant);\npragma Loop_Variant ($direction => $measure);\n"
         if {[$gdb onecolumn {select count(*) from vertices where diagram_id = :id and item_id = :anchor}] != 1} {
             error "Ambiguous loop annotation anchor"
@@ -164,6 +256,9 @@ proc generate {db gdb filename} {
     if {[llength $diagrams] != 1} {error "Expected exactly one diagram"}
     set id [lindex $diagrams 0]
     set meta [metadata $db $id]
+    set catalog [declaration_catalog $meta]
+    set known [dict get $catalog known]
+    set indexed [indexed_parameters $meta $catalog]
     set language [$db onecolumn {select value from info where key = 'language'}]
     if {$language ne [dict get $meta profile]} {error "Language/profile mismatch"}
     if {![mwc::is_drakon $id]} {error "Expected a DRAKON diagram"}
@@ -176,15 +271,15 @@ proc generate {db gdb filename} {
                         error "Expected one assignment per action line: $line"
                     }
                     identifier $lhs
-                    expression $rhs
+                    expression $rhs $indexed
                 }
             }
-            if {expression $row(text)}
+            if {expression $row(text) $indexed}
             beginend - vertical - horizontal - branch - address - junction - arrow - params - comment {}
             default {error "Unsupported Ada icon: $row(type)"}
         }
     }
-    annotate $db $gdb $id $meta
+    annotate $db $gdb $id $meta $indexed
     set cb [callbacks]
     gen::fix_graph_for_diagram $gdb $cb 0 $id
     set functions [gen::generate_functions $db $gdb $cb 1]
@@ -193,39 +288,79 @@ proc generate {db gdb filename} {
     lassign [lindex $functions 0] ignored name signature body
     set pkg [dict get $meta package]
     set decls {}
+    set emitted {Boolean}
     foreach decl [dict get $meta declarations] {
         set kind [lindex $decl 0]
         if {$kind eq "integer" && [llength $decl] == 4} {
             lassign $decl kind type low high
-            set prefix "type [identifier $type] is"
+            set type [identifier $type]
+            foreach bound [list $low $high] {
+                if {![regexp {^-?(0|[1-9][0-9]*)$} $bound]} {error "Expected integer bound"}
+            }
+            if {$low > $high} {error "Reversed type bounds"}
+            lappend decls "   type $type is range $low .. $high;"
         } elseif {$kind eq "subtype" && [llength $decl] == 5} {
             lassign $decl kind type base low high
-            set prefix "subtype [identifier $type] is [identifier $base]"
-        } else {error "Unsupported type declaration: $decl"}
-        foreach bound [list $low $high] {
-            if {![regexp {^-?(0|[1-9][0-9]*)$} $bound]} {error "Expected integer bound"}
+            set type [identifier $type]
+            set base [identifier $base]
+            if {[lsearch -exact $emitted $base] < 0} {error "Unknown subtype base: $base"}
+            foreach bound [list $low $high] {
+                if {![regexp {^-?(0|[1-9][0-9]*)$} $bound]} {error "Expected integer bound"}
+            }
+            if {$low > $high} {error "Reversed type bounds"}
+            lappend decls "   subtype $type is $base range $low .. $high;"
+        } elseif {$kind eq "array" && [llength $decl] == 4} {
+            lassign $decl kind type index_type element_type
+            set type [identifier $type]
+            set index_type [identifier $index_type]
+            set element_type [identifier $element_type]
+            if {[lsearch -exact $emitted $index_type] < 0 ||
+                [lsearch -exact $emitted $element_type] < 0} {
+                error "Array types must reference earlier declarations"
+            }
+            lappend decls "   type $type is array ($index_type) of $element_type;"
+        } else {
+            error "Unsupported type declaration: $decl"
         }
-        if {$low > $high} {error "Reversed type bounds"}
-        lappend decls "   $prefix range $low .. $high;"
+        lappend emitted $type
     }
+
     set params {}
     foreach param [dict get $meta parameters] {
         if {[llength $param] != 3} {error "Expected name, mode, type"}
         lassign $param pname mode type
+        set pname [identifier $pname]
+        set type [identifier $type]
         if {$mode ni {in out {in out}}} {error "Unsupported parameter mode"}
-        lappend params "[identifier $pname] : $mode [identifier $type]"
+        if {[lsearch -exact $known $type] < 0} {error "Unknown parameter type: $type"}
+        lappend params "$pname : $mode $type"
     }
     if {$params eq {}} {error "Expected explicit parameters"}
     set declaration "procedure $name ([join $params {; }])"
+
+    set locals {}
+    if {[dict get $meta schema] eq "3"} {
+        foreach local [dict get $meta locals] {
+            lassign $local lname ltype
+            set lname [identifier $lname]
+            set ltype [identifier $ltype]
+            lappend locals "      $lname : $ltype;"
+        }
+    }
+    set local_block ""
+    if {$locals ne {}} {
+        set local_block "\n[join $locals \n]"
+    }
+
     set aspect ""
     if {[dict get $meta profile] eq "SPARK"} {set aspect " with SPARK_Mode => On"}
     set termination ""
-    if {[dict get $meta schema] eq "2"} {
+    if {[dict get $meta schema] ne "1"} {
         set termination ", Always_Terminates => [dict get $meta always_terminates]"
     }
     set banner "-- Generated from DRAKON and explicit ada metadata. DO NOT EDIT."
     set spec "$banner\npackage $pkg$aspect is\n[join $decls \n]\n\n   $declaration\n     with Post => [dict get $meta post]$termination;\nend $pkg;\n"
-    set impl "$banner\npackage body $pkg$aspect is\n   $declaration is\n   begin\n[gen::indent $body 2]\n   end $name;\nend $pkg;\n"
+    set impl "$banner\npackage body $pkg$aspect is\n   $declaration is$local_block\n   begin\n[gen::indent $body 2]\n   end $name;\nend $pkg;\n"
     foreach {extension content} [list ads $spec adb $impl] {
         set path [file join [file dirname $filename] [string tolower $pkg].$extension]
         set f [open $path w]
