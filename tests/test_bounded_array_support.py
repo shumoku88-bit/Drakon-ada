@@ -6,7 +6,12 @@ import subprocess
 import tempfile
 import unittest
 
-from tools.bounded_array_fixture import materialize
+from tools.bounded_array_fixture import (
+    FOLD_ACTION,
+    INIT_ACTION,
+    headless_action_fit,
+    materialize,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -48,6 +53,16 @@ class BoundedArraySupportTests(unittest.TestCase):
         self.assertIn("Total := Total + Items (Index);", body)
         self.assertIn("pragma Loop_Variant (Decreases => 5 - Index);", body)
         self.assertIn("Always_Terminates => True", spec)
+
+    def test_rewritten_actions_use_upstream_headless_fit_geometry(self):
+        with sqlite3.connect(self.source) as db:
+            rows = db.execute(
+                "select text, w, h from items where type='action'"
+            ).fetchall()
+
+        geometry = {text: (width, height) for text, width, height in rows}
+        self.assertEqual(geometry[INIT_ACTION], headless_action_fit(INIT_ACTION))
+        self.assertEqual(geometry[FOLD_ACTION], headless_action_fit(FOLD_ACTION))
 
     def test_non_array_call_syntax_remains_rejected(self):
         with sqlite3.connect(self.source) as db:
