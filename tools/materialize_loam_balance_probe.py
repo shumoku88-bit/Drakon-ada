@@ -23,9 +23,12 @@ ADA_METADATA = (
     "declarations {{integer Quantity -30 30} "
     "{subtype Change_Quantity Quantity -10 10}} "
     "parameters {{First in Change_Quantity} {Second in Change_Quantity} "
-    "{Third in Change_Quantity} {Accepted out Boolean}} "
-    "post {Accepted = (First + Second + Third = 0)}"
+    "{Third in Change_Quantity} {Total out Quantity} {Accepted out Boolean}} "
+    "post {Total = First + Second + Third and then Accepted = (Total = 0)}"
 )
+
+TRUE_ACTION = "Total := First + Second + Third;\nAccepted := True;"
+FALSE_ACTION = "Total := First + Second + Third;\nAccepted := False;"
 
 
 def _one(rows, label):
@@ -77,7 +80,7 @@ def materialize(output: Path) -> Path:
             "update diagrams set name=?, description=? where diagram_id=?",
             (
                 "Admit_Three_Changes",
-                "LOAM-inspired bounded witness: admit exactly when three signed changes sum to zero.",
+                "LOAM-inspired bounded witness: materialize the total and admit exactly when it is zero.",
                 diagram_id,
             ),
         )
@@ -91,11 +94,11 @@ def materialize(output: Path) -> Path:
         )
         db.execute(
             "update items set text=? where item_id=?",
-            ("Accepted := True;", action_by_text["Result := Input;"]),
+            (TRUE_ACTION, action_by_text["Result := Input;"]),
         )
         db.execute(
             "update items set text=? where item_id=?",
-            ("Accepted := False;", action_by_text["Result := -Input;"]),
+            (FALSE_ACTION, action_by_text["Result := -Input;"]),
         )
         db.execute(
             "update diagram_info set value=? where diagram_id=? and name='ada'",
@@ -138,7 +141,7 @@ def materialize(output: Path) -> Path:
         raise RuntimeError("Materialized start label still carries branch-template semantics")
     if condition != "First + Second + Third = 0":
         raise RuntimeError("Materialized admission condition mismatch")
-    if materialized_actions != {"Accepted := True;", "Accepted := False;"}:
+    if materialized_actions != {TRUE_ACTION, FALSE_ACTION}:
         raise RuntimeError("Materialized admission branches mismatch")
     if metadata != ADA_METADATA or language != "SPARK":
         raise RuntimeError("Materialized explicit metadata/profile mismatch")
