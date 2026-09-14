@@ -26,12 +26,30 @@ jobs:
           set -euo pipefail
           # Libadalang's dependency closure is large enough to exceed Alire's
           # normal first timeout on a fresh hosted runner. Keep the selected
-          # GNAT 16.1.0 toolchain and give the solver time to finish before
-          # considering a separate frontend toolchain.
+          # GNAT 16.1.0 toolchain and give the solver time to finish.
           alr -n settings --global --set solver.timeout 120
           mkdir -p "$RUNNER_TEMP/libadalang-source"
           cd "$RUNNER_TEMP/libadalang-source"
-          alr -n get libadalang=26.0.0
+
+          # Retry only the acquisition boundary. GitHub release/archive fetches
+          # can fail transiently (for example HTTP 5xx); semantic qualification
+          # below remains strictly fail-closed.
+          fetched=false
+          for attempt in 1 2 3; do
+            if alr -n get libadalang=26.0.0; then
+              fetched=true
+              break
+            fi
+            if [[ "$attempt" -lt 3 ]]; then
+              echo "Libadalang acquisition attempt $attempt failed; retrying" >&2
+              sleep $((attempt * 5))
+            fi
+          done
+          if [[ "$fetched" != true ]]; then
+            echo "Libadalang acquisition failed after 3 attempts" >&2
+            exit 1
+          fi
+
           LAL_DIR="$(find "$RUNNER_TEMP/libadalang-source" -maxdepth 1 -type d -name 'libadalang_*' -print -quit)"
           if [[ -z "$LAL_DIR" ]]; then
             echo "Libadalang crate directory was not created" >&2
