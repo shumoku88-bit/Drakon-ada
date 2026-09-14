@@ -199,10 +199,11 @@ proc annotate {db gdb id meta indexed} {
         if {[string trim $invariant] eq ""} {error "Empty loop invariant"}
         set variant [dict get $annotation variant]
         if {[llength $variant] != 2 || [lindex $variant 0] ni {Increases Decreases}} {
-            error "Expected variant direction and identifier"
+            error "Expected variant direction and expression"
         }
         lassign $variant direction measure
-        identifier $measure
+        set measure [expression $measure]
+        if {[string trim $measure] eq ""} {error "Empty loop variant"}
         set prefix "pragma Loop_Invariant ($invariant);\npragma Loop_Variant ($direction => $measure);\n"
         if {[$gdb onecolumn {select count(*) from vertices where diagram_id = :id and item_id = :anchor}] != 1} {
             error "Ambiguous loop annotation anchor"

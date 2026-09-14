@@ -44,9 +44,9 @@ class BoundedArraySupportTests(unittest.TestCase):
             "Post => Total = Items (1) + Items (2) + Items (3) + Items (4)", spec
         )
         self.assertIn("Index : Index_Type;", body)
-        self.assertIn("Remaining : Remaining_Type;", body)
+        self.assertNotIn("Remaining", body)
         self.assertIn("Total := Total + Items (Index);", body)
-        self.assertIn("pragma Loop_Variant (Decreases => Remaining);", body)
+        self.assertIn("pragma Loop_Variant (Decreases => 5 - Index);", body)
         self.assertIn("Always_Terminates => True", spec)
 
     def test_non_array_call_syntax_remains_rejected(self):
@@ -64,12 +64,38 @@ class BoundedArraySupportTests(unittest.TestCase):
                 "select value from diagram_info where name='ada'"
             ).fetchone()[0]
             value = value.replace(
-                "locals {{Index Index_Type} {Remaining Remaining_Type}}",
-                "locals {{Index Index_Type} {Remaining Remaining_Type} {Scratch Change_Array}}",
+                "locals {{Index Index_Type}}",
+                "locals {{Index Index_Type} {Scratch Change_Array}}",
             )
             db.execute("update diagram_info set value=? where name='ada'", (value,))
         _, result = self.generate(False)
         self.assertIn("Array locals are not supported", result.stderr)
+
+    def test_variant_rejects_array_indexing(self):
+        with sqlite3.connect(self.source) as db:
+            value = db.execute(
+                "select value from diagram_info where name='ada'"
+            ).fetchone()[0]
+            value = value.replace(
+                "variant {Decreases {5 - Index}}",
+                "variant {Decreases {Items (Index)}}",
+            )
+            db.execute("update diagram_info set value=? where name='ada'", (value,))
+        _, result = self.generate(False)
+        self.assertIn("Unsupported expression", result.stderr)
+
+    def test_variant_rejects_function_call(self):
+        with sqlite3.connect(self.source) as db:
+            value = db.execute(
+                "select value from diagram_info where name='ada'"
+            ).fetchone()[0]
+            value = value.replace(
+                "variant {Decreases {5 - Index}}",
+                "variant {Decreases {Fake_Func (Index)}}",
+            )
+            db.execute("update diagram_info set value=? where name='ada'", (value,))
+        _, result = self.generate(False)
+        self.assertIn("Unsupported expression", result.stderr)
 
 
 if __name__ == "__main__":
