@@ -1,6 +1,6 @@
 # LOAM bounded-change-sequence probe
 
-Status: **research boundary fixed; implementation not yet started**.
+Status: **Phase A1 generator qualification in progress; not yet locally verified**.
 
 Reference LOAM commit: `d00ee74c443e53a40983195a863eb3ca6b24fcde`.
 Reference Drakon-ada main after the first LOAM dogfood merge:
@@ -71,10 +71,9 @@ these properties:
 A finite maximum in SPARK would be an **implementation policy**, not a claim
 that LOAM's current Lean `List` has a semantic maximum.
 
-## Current Drakon-ada gap
+## Generator pressure discovered by LOAM
 
-The current generator is intentionally much smaller than what this requires.
-It currently supports:
+Before this probe, Drakon-ada intentionally supported only:
 
 - integer types and integer subtypes;
 - scalar procedure parameters;
@@ -82,61 +81,92 @@ It currently supports:
 - structured `if` and normalized loops;
 - explicit loop invariant / variant metadata.
 
-It deliberately rejects or lacks:
+LOAM's retained change sequence is the first dogfood case that genuinely asks
+for more. The branch now contains an intentionally narrow **schema 3** candidate
+that adds only:
 
-- array declarations;
-- record declarations;
-- indexed reads such as `Items (Index)`;
-- record field reads such as `Change.Quantity`;
-- local variable declarations;
-- general function calls and Ada attributes.
+- fixed array type declarations whose index and element types were declared
+  earlier;
+- read-only indexing of procedure parameters known to have one of those array
+  types;
+- scalar local declarations.
 
-This is the first LOAM dogfood result that genuinely pressures the generator
-surface. The correct response is not to add all missing Ada syntax at once.
+It still rejects:
 
-## Next falsifiable probe: Phase A
+- record declarations and field access;
+- array locals;
+- general function calls;
+- Ada attributes;
+- arbitrary declarations embedded in actions;
+- assignments into array elements.
 
-Test only the smallest new capability forced by the retained-list observation:
-**a bounded sequence of signed quantities**.
+The array-read validator does not simply allow `Name (...)`: the name must be an
+explicit procedure parameter whose declared type is an explicit array type.
+This keeps function-call syntax closed rather than turning the expression checker
+into a partial Ada parser.
 
-The probe should use a tiny witness capacity, for example four slots, while
-stating clearly that the number is experimental rather than a production LOAM
-limit.
+## Phase A1: fixed four-slot array fold
+
+Before adding an active `Length`, isolate array indexing and local loop state with
+a fixed four-element witness.
 
 Conceptual shape:
 
 ```text
 Index := 1
+Remaining := 4
 Total := 0
         |
-   Length = 0 ? ---- yes ---> done
++-------------------------------+
+| Index <= 4 ?                  |
+|   no  -> leave loop           |
+|   yes                         |
+|     Total := Total + Items(Index)
+|     Index := Index + 1        |
+|     Remaining := Remaining - 1
++-------------------------------+
         |
-       no
-        v
-+-----------------------------+
-| Total := Total + Items(Index)
-| Index = Length ?
-|   yes -> leave loop
-|   no  -> Index := Index + 1
-+-----------------------------+
-        |
-   Total = 0 ?
-     /      \
-   yes      no
+      End
 ```
 
-Phase A is successful only if:
+The intended explicit postcondition is:
 
-- the DRAKON diagram remains easier to inspect than equivalent hand-written
-  control flow;
-- SPARK proves index safety, initialization, termination, arithmetic safety, and
-  the explicit admission contract for the bounded representation;
-- negative controls demonstrate that an off-by-one index, too-small arithmetic
-  range, or weakened invariant is caught;
-- generator changes remain narrow and reusable rather than becoming a general
-  Ada parser.
+```text
+Total = Items (1) + Items (2) + Items (3) + Items (4)
+```
 
-Phase A does **not** claim to implement LOAM `MovementChange` yet.
+The current branch qualifies this new surface by transforming the already
+qualified countdown DRAKON source **inside a test only**. That temporary test
+fixture is not a canonical LOAM diagram and must not be promoted unless the
+local compiler/prover run succeeds and the resulting diagram is worth looking
+at.
+
+Phase A1 should establish:
+
+- array declaration emission;
+- indexed reads but no general calls;
+- scalar locals but no local arrays;
+- index safety across a normalized DRAKON loop;
+- initialization and termination;
+- arithmetic safety for the fixed bounded representation;
+- a postcondition relating the output total to all four retained inputs.
+
+No production LOAM maximum is implied by the number four.
+
+## Phase A2 only if A1 earns it
+
+Add an explicit active `Length` and fold only the active prefix. This is where
+Ada's finite-capacity policy becomes visible as a real boundary:
+
+```text
+Length <= Capacity
+```
+
+Values beyond `Length` must be ignored, while `Length > Capacity` must fail
+closed rather than truncate.
+
+Do not add Phase A2 until A1 has shown that the array/index/local surface is both
+proof-friendly and visually useful.
 
 ## Phase B only if Phase A earns it
 
@@ -150,8 +180,8 @@ Then probe one downstream operation that truly uses retained identity:
 `quantityAt(QueryCoordinate)`.
 
 That would test whether the visual form still helps once the sequence contains
-meaningful coordinates, and whether array indexing plus record-field access are
-worth promoting into the generator.
+meaningful coordinates, and whether record-field access is worth promoting into
+the generator.
 
 Do not add Phase B features merely because Ada supports them.
 
@@ -171,6 +201,6 @@ let GNATprove expose representation obligations
 promote only what survives both inspections
 ```
 
-If Phase A makes the diagram noisier without improving understanding, stop and
+If Phase A1 makes the diagram noisier without improving understanding, stop and
 reconsider the representation rather than growing Drakon-ada to imitate Lean's
 `List` mechanically.
