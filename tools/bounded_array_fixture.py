@@ -19,7 +19,7 @@ WEAK_LOOP_INVARIANT = "Index >= 1 and then Index <= 4 and then Remaining = 5 - I
 ARRAY_METADATA = f"""schema 3
 profile SPARK
 package Array_Fold
-declarations {{{{integer Quantity -40 40}} {{subtype Change_Quantity Quantity -10 10}} {{integer Index_Type 1 5}} {{subtype Slot Index_Type 1 4}} {{integer Remaining_Type 0 4}} {{array Change_Array Slot Change_Quantity}}}}
+declarations {{{{integer Quantity -40 40}} {{subtype Change_Quantity Quantity -10 10}} {{integer Loop_Count 0 5}} {{subtype Index_Type Loop_Count 1 5}} {{subtype Slot Loop_Count 1 4}} {{subtype Remaining_Type Loop_Count 0 4}} {{array Change_Array Slot Change_Quantity}}}}
 parameters {{{{Items in Change_Array}} {{Total out Quantity}}}}
 locals {{{{Index Index_Type}} {{Remaining Remaining_Type}}}}
 post {{Total = Items (1) + Items (2) + Items (3) + Items (4)}}
