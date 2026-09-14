@@ -55,14 +55,19 @@ class BoundedArraySupportTests(unittest.TestCase):
         self.assertIn("Always_Terminates => True", spec)
 
     def test_rewritten_actions_use_upstream_headless_fit_geometry(self):
+        # These are the exact half-extents produced by the pinned upstream
+        # headless measure -> p.measure_text -> action.fit path.
+        self.assertEqual(headless_action_fit(INIT_ACTION), (50, 30))
+        self.assertEqual(headless_action_fit(FOLD_ACTION), (110, 30))
+
         with sqlite3.connect(self.source) as db:
             rows = db.execute(
                 "select text, w, h from items where type='action'"
             ).fetchall()
 
         geometry = {text: (width, height) for text, width, height in rows}
-        self.assertEqual(geometry[INIT_ACTION], headless_action_fit(INIT_ACTION))
-        self.assertEqual(geometry[FOLD_ACTION], headless_action_fit(FOLD_ACTION))
+        self.assertEqual(geometry[INIT_ACTION], (50, 30))
+        self.assertEqual(geometry[FOLD_ACTION], (110, 30))
 
     def test_non_array_call_syntax_remains_rejected(self):
         with sqlite3.connect(self.source) as db:
