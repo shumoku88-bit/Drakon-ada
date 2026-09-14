@@ -29,26 +29,42 @@ always_terminates True"""
 INIT_ACTION = "Index := 1;\nTotal := 0;"
 FOLD_ACTION = "Total := Total + Items (Index);\nIndex := Index + 1;"
 
-# Keep temporary fixture geometry derived from the pinned upstream editor rather
-# than from probe-specific magic numbers. DRAKON Editor's headless unit-test
-# window measures text at 6 units per character and 20 units per line, while
-# action.fit uses measured width (with a minimum of 50) and measured height as
-# the action icon's w/h fields. This only establishes deterministic fixture
-# geometry: production Tk font rendering remains a separate human visual-review
-# gate before this diagram can become canonical.
+# Mirror the pinned editor's headless fit path, not raw text metrics.
+#
+# unittest/mwindow_dummy.tcl measures text at 6 units per character and
+# 20 units per line. scripts/dedit.tcl:p.measure_text then halves those
+# dimensions, snaps each upward to the 10-unit grid, and adds 10 units of
+# padding. scripts/icon.action.tcl:action.fit finally enforces a minimum
+# half-width of 50. The items table stores action w/h as half-extents, so
+# writing the raw measured dimensions directly would make the boxes roughly
+# twice as large as the editor itself would make them.
 _UPSTREAM_TEST_CHAR_WIDTH = 6
 _UPSTREAM_TEST_LINE_HEIGHT = 20
+_UPSTREAM_SNAP = 10
+_UPSTREAM_FIT_PADDING = 10
 _UPSTREAM_ACTION_MIN_WIDTH = 50
 
 
-def headless_action_fit(text: str) -> tuple[int, int]:
-    """Return action w/h using the pinned upstream headless fit contract."""
+def _snap_up(value: int) -> int:
+    return ((value + _UPSTREAM_SNAP - 1) // _UPSTREAM_SNAP) * _UPSTREAM_SNAP
+
+
+def _headless_measure_text(text: str) -> tuple[int, int]:
     lines = text.split("\n")
     if not lines:
         lines = [""]
-    text_width = max((len(line) * _UPSTREAM_TEST_CHAR_WIDTH for line in lines), default=0)
-    text_height = _UPSTREAM_TEST_LINE_HEIGHT * max(1, len(lines))
-    return max(_UPSTREAM_ACTION_MIN_WIDTH, text_width), text_height
+    width = max((len(line) * _UPSTREAM_TEST_CHAR_WIDTH for line in lines), default=0)
+    height = _UPSTREAM_TEST_LINE_HEIGHT * max(1, len(lines))
+    return width, height
+
+
+def headless_action_fit(text: str) -> tuple[int, int]:
+    """Return action w/h after the pinned upstream headless fit transform."""
+    measured_width, measured_height = _headless_measure_text(text)
+    width = _snap_up(measured_width // 2) + _UPSTREAM_FIT_PADDING
+    height = _snap_up(measured_height // 2) + _UPSTREAM_FIT_PADDING
+    width = max(_UPSTREAM_ACTION_MIN_WIDTH, width)
+    return width, height
 
 
 def _rewrite_action(db: sqlite3.Connection, old_text: str, new_text: str) -> None:
