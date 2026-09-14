@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused gate for the bounded LOAM balance-admission dogfood probe."""
+"""Focused gate for the canonical bounded LOAM balance-admission dogfood probe."""
 from pathlib import Path
 import os
 import re
@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 os.chdir(ROOT)
 WORK = ROOT / "build/loam-balance-probe"
 EVIDENCE = WORK / "evidence"
+CANONICAL_SOURCE = ROOT / "examples/loam-balance-probe/loam_balance_probe.drn"
 SOURCE = WORK / "loam_balance_probe.drn"
 
 
@@ -92,10 +93,7 @@ run(
     ],
     EVIDENCE / "generation-tests.txt",
 )
-run(
-    [sys.executable, "tools/materialize_loam_balance_probe.py", SOURCE],
-    EVIDENCE / "materialize.txt",
-)
+shutil.copyfile(CANONICAL_SOURCE, SOURCE)
 runner = [
     os.environ.get("TCLSH", "tclsh"),
     "integration/drakon-editor/generate.tcl",
@@ -146,7 +144,7 @@ run([WORK / "bin/loam_balance_probe_test"], EVIDENCE / "runtime.txt")
 
 negative_control(
     "wrong-predicate",
-    "update items set text='First + Second - Third = 0' where type='if'",
+    "update items set text='Total = 1' where type='if'",
     ("postcondition might fail",),
     proof_flags,
 )
