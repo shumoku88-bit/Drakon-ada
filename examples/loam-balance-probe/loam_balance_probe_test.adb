@@ -3,6 +3,7 @@ with Loam_Balance_Admission;
 
 procedure Loam_Balance_Probe_Test is
    use type Loam_Balance_Admission.Quantity;
+   Total    : Loam_Balance_Admission.Quantity;
    Accepted : Boolean;
    Expected : Boolean;
    Count    : Natural := 0;
@@ -11,8 +12,11 @@ begin
       for Second in Loam_Balance_Admission.Change_Quantity loop
          for Third in Loam_Balance_Admission.Change_Quantity loop
             Loam_Balance_Admission.Admit_Three_Changes
-              (First, Second, Third, Accepted);
-            Expected := First + Second + Third = 0;
+              (First, Second, Third, Total, Accepted);
+            if Total /= First + Second + Third then
+               raise Program_Error with "balance total mismatch";
+            end if;
+            Expected := Total = 0;
             if Accepted /= Expected then
                raise Program_Error with "balance admission mismatch";
             end if;
