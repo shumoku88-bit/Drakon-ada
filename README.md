@@ -9,9 +9,10 @@ of truth.
 
 ## Project boundary
 
-- **Ada/SPARK source is the source of truth.**
-- DRAKON diagrams are derived observation artifacts. Regenerate them from source;
-  do not hand-edit them as an alternative program representation.
+- **Ada/SPARK source is the source of truth for the active observation path.**
+- DRAKON diagrams produced by that path are derived observation artifacts.
+  Regenerate them from source; do not hand-edit them as an alternative program
+  representation.
 - The projection must preserve source traceability. Every projected control-flow
   node must be attributable to an exact source construct/span.
 - Unsupported or ambiguous source constructs must fail closed or be rendered as
@@ -23,7 +24,7 @@ of truth.
 - `hra-n` is the first intended practical observation target. It is an external
   codebase, not a dependency and must not be vendored into this repository.
 
-The intended loop is:
+The intended active loop is:
 
 ```text
 Ada / SPARK source
@@ -82,11 +83,10 @@ A parser such as AdaCore Libadalang is a candidate frontend. Parser selection is
 an implementation decision and must be justified by evidence; Drakon-ada should
 not grow a handwritten Ada parser merely to reach the first milestone.
 
-## Historical DRAKON-to-Ada checkpoint
+## Suspended DRAKON-to-Ada generator lane
 
 The repository began in the opposite direction: authoritative DRAKON diagrams
-were used to generate Ada/SPARK. That work remains valuable as qualified research
-into DRAKON structured control flow and Ada/SPARK representation.
+were used to generate Ada/SPARK. That work is **suspended, not retired**.
 
 Checkpoint `6f179ac` demonstrated:
 
@@ -95,26 +95,50 @@ DRAKON movement diagram -> generated Ada/SPARK -> compilation -> GNATprove -> ru
 ```
 
 Later work qualified minimal structured branching and loops. These checkpoints are
-preserved for provenance and regression evidence, but **extending the generator is
-no longer the active product direction**. Existing generator material should not
-be deleted merely to make the pivot look clean; retire or archive it only when its
-remaining evidence value is understood.
+preserved as executable research and as the foundation of a possible future
+DRAKON-to-Ada/SPARK authoring lane.
+
+The reason to keep this lane alive is practical. If AI systems become reliably good
+at constructing and revising precise DRAKON diagrams, a useful workflow may become:
+
+```text
+human intent + AI
+       |
+       v
+reviewable DRAKON design
+       |
+       v
+Ada / SPARK generation
+       |
+       v
+compiler / tests / GNATprove
+```
+
+That would be a different authority model from the active source-observation path,
+so the two directions must not be silently mixed. For now:
+
+- observation work is the active product direction;
+- generator capability remains frozen at qualified checkpoints unless explicitly
+  resumed;
+- generator files, tests, editor integration, and provenance are preserved;
+- future generator work must define its own source-of-truth boundary explicitly;
+- the active observer must not depend on generated Ada or on the old generator IR.
 
 ## Current repository map
 
-- `generator/ada.tcl` — historical shared Ada emitter and generation profiles
+- `generator/ada.tcl` — suspended Ada/SPARK generator lane
 - `integration/drakon-editor/` — editor integration and repository browsing work
-- `examples/` — historical qualified DRAKON-to-Ada examples and probes
-- `tests/` — existing qualification/regression tests
-- `docs/control-flow.md` — historical structured-control-flow qualification
+- `examples/` — qualified generator examples/probes plus observation fixtures
+- `tests/` — qualification and regression tests for both preserved and active work
+- `docs/control-flow.md` — qualified structured-control-flow generator research
 - `docs/repository-browser.md` — current diagram browser behavior
 - `docs/observation-architecture.md` — active source-to-observation boundary
 - `upstream.lock` — exact official DRAKON Editor commit used by existing integration
 - `toolchain.lock` — qualified toolchain references for historical verification
 
-## Existing historical verification
+## Existing generator verification
 
-The previous generator checkpoint remains reproducible with the qualified
+The suspended generator checkpoint remains reproducible with the qualified
 prerequisites:
 
 ```sh
@@ -122,7 +146,7 @@ python3 tools/verify.py
 python3 tools/check_clean.py
 ```
 
-Those commands verify the historical generation path. They are **not** yet a
+Those commands verify the preserved generation path. They are **not** yet a
 verification gate for the new Ada/SPARK-to-DRAKON observation path.
 
 ## License and provenance
