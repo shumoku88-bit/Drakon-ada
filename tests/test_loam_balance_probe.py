@@ -48,6 +48,9 @@ class LoamBalanceProbeTests(unittest.TestCase):
     def test_materialized_semantic_shape_is_explicit(self):
         with sqlite3.connect(self.source) as db:
             name = db.execute("select name from diagrams").fetchone()[0]
+            begin_labels = {
+                row[0] for row in db.execute("select text from items where type='beginend'")
+            }
             condition = db.execute(
                 "select text from items where type='if'"
             ).fetchone()[0]
@@ -58,6 +61,8 @@ class LoamBalanceProbeTests(unittest.TestCase):
                 "select value from diagram_info where name='ada'"
             ).fetchone()[0]
         self.assertEqual(name, "Admit_Three_Changes")
+        self.assertIn("Admit_Three_Changes", begin_labels)
+        self.assertNotIn("Absolute_Value", begin_labels)
         self.assertEqual(condition, "First + Second + Third = 0")
         self.assertEqual(actions, {"Accepted := True;", "Accepted := False;"})
         self.assertEqual(metadata, probe.ADA_METADATA)
