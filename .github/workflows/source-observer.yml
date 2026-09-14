@@ -24,6 +24,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Libadalang's dependency closure is large enough to exceed Alire's
+          # normal first timeout on a fresh hosted runner. Keep the selected
+          # GNAT 16.1.0 toolchain and give the solver time to finish before
+          # considering a separate frontend toolchain.
+          alr -n settings --global --set solver.timeout 120
           mkdir -p "$RUNNER_TEMP/libadalang-source"
           cd "$RUNNER_TEMP/libadalang-source"
           alr -n get libadalang=26.0.0
