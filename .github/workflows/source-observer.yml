@@ -1,0 +1,80 @@
+name: Source Observer Qualification
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify-source-observer:
+    name: Libadalang CFG on Intel macOS
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Alire
+        uses: alire-project/setup-alire@v6
+
+      - name: Fetch and build Libadalang 26.0.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/libadalang-source"
+          cd "$RUNNER_TEMP/libadalang-source"
+          alr -n get libadalang=26.0.0
+          LAL_DIR="$(find "$RUNNER_TEMP/libadalang-source" -maxdepth 1 -type d -name 'libadalang_*' -print -quit)"
+          if [[ -z "$LAL_DIR" ]]; then
+            echo "Libadalang crate directory was not created" >&2
+            exit 1
+          fi
+          cd "$LAL_DIR"
+          alr build --release -- -XLIBRARY_TYPE=relocatable
+          LANGKIT_DIR="$(find "$HOME/.local/share/alire/builds" -maxdepth 1 -type d -name 'langkit_support_*' -print -quit)"
+          if [[ -z "$LANGKIT_DIR" ]]; then
+            echo "langkit_support build directory was not found" >&2
+            exit 1
+          fi
+          echo "LAL_DIR=$LAL_DIR" >> "$GITHUB_ENV"
+          echo "LANGKIT_DIR=$LANGKIT_DIR" >> "$GITHUB_ENV"
+
+      - name: Install Python bindings and expose shared libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          VENV="$RUNNER_TEMP/libadalang-venv"
+          LIBDIR="$RUNNER_TEMP/libadalang-libs"
+          python3 -m venv "$VENV"
+          source "$VENV/bin/activate"
+          python -m pip install --upgrade pip
+
+          cd "$LANGKIT_DIR"
+          python -m pip install -r requirements-github.txt
+          python -m pip install -r requirements-pypi.txt
+          python -m pip install .
+
+          cd "$LAL_DIR"
+          python -m pip install ./python
+
+          mkdir -p "$LIBDIR"
+          find "$HOME/.local/share/alire/builds" -type f -name '*.dylib' -exec cp -f {} "$LIBDIR/" \;
+          find "$LAL_DIR" -type f -name 'libadalang.dylib' -exec cp -f {} "$LIBDIR/" \;
+          if [[ ! -f "$LIBDIR/libadalang.dylib" ]]; then
+            echo "relocatable libadalang.dylib was not found" >&2
+            exit 1
+          fi
+
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+          echo "DYLD_FALLBACK_LIBRARY_PATH=$LIBDIR:/usr/local/lib:/usr/lib" >> "$GITHUB_ENV"
+
+      - name: Qualify normalized control-flow observation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -c 'import libadalang as lal; print("Libadalang:", getattr(lal, "__version__", "unknown"), lal.__file__)'
+          python tools/qualify_source_observer.py --evidence build/evidence/source-observer.json
+          cat build/evidence/source-observer.json
