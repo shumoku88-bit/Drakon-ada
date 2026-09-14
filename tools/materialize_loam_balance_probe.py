@@ -3,8 +3,9 @@
 
 This is deliberately a dogfood probe, not a LOAM migration. It reuses the
 checked-in synthetic branch diagram as a geometry/control-flow template and
-changes only the diagram name, condition/actions, and explicit Ada metadata.
-The resulting .drn lives under build/ and is not yet a new canonical source.
+changes only the diagram name/start label, condition/actions, and explicit Ada
+metadata. The resulting .drn lives under build/ and is not yet a new canonical
+source.
 """
 from pathlib import Path
 import argparse
@@ -46,6 +47,12 @@ def materialize(output: Path) -> Path:
         if diagram_name != "Absolute_Value":
             raise RuntimeError(f"Unexpected branch template diagram: {diagram_name!r}")
 
+        starts = db.execute(
+            "select item_id, text from items where diagram_id=? and type='beginend' and text='Absolute_Value'",
+            (diagram_id,),
+        ).fetchall()
+        start_id, _ = _one(starts, "branch-template start icon")
+
         if_rows = db.execute(
             "select item_id, text from items where diagram_id=? and type='if'",
             (diagram_id,),
@@ -76,6 +83,10 @@ def materialize(output: Path) -> Path:
         )
         db.execute(
             "update items set text=? where item_id=?",
+            ("Admit_Three_Changes", start_id),
+        )
+        db.execute(
+            "update items set text=? where item_id=?",
             ("First + Second + Third = 0", if_id),
         )
         db.execute(
@@ -90,9 +101,9 @@ def materialize(output: Path) -> Path:
             "update diagram_info set value=? where diagram_id=? and name='ada'",
             (ADA_METADATA, diagram_id),
         )
-        if db.total_changes != 5:
+        if db.total_changes != 6:
             raise RuntimeError(
-                f"Expected five semantic updates, observed {db.total_changes}; template drift?"
+                f"Expected six semantic updates, observed {db.total_changes}; template drift?"
             )
         db.execute("update info set value='SPARK' where key='language'")
         db.commit()
@@ -100,6 +111,12 @@ def materialize(output: Path) -> Path:
         name = db.execute(
             "select name from diagrams where diagram_id=?", (diagram_id,)
         ).fetchone()[0]
+        begin_labels = {
+            row[0]
+            for row in db.execute(
+                "select text from items where diagram_id=? and type='beginend'", (diagram_id,)
+            )
+        }
         condition = db.execute(
             "select text from items where item_id=?", (if_id,)
         ).fetchone()[0]
@@ -117,6 +134,8 @@ def materialize(output: Path) -> Path:
 
     if name != "Admit_Three_Changes":
         raise RuntimeError("Materialized procedure name mismatch")
+    if "Admit_Three_Changes" not in begin_labels or "Absolute_Value" in begin_labels:
+        raise RuntimeError("Materialized start label still carries branch-template semantics")
     if condition != "First + Second + Third = 0":
         raise RuntimeError("Materialized admission condition mismatch")
     if materialized_actions != {"Accepted := True;", "Accepted := False;"}:
