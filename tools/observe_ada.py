@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Observe Ada/SPARK source structure without making DRAKON authoritative.
+"""Observe Ada/SPARK control flow without making DRAKON authoritative.
 
-Phase O1 probe: Libadalang parses one Ada source file and this tool emits a
-small, deterministic JSON observation containing exact source spans for the
-subprogram and its statements.  No control-flow edges are inferred yet.
+Phase O2: Libadalang parses one Ada source file and this tool emits a small,
+deterministic renderer-independent control-flow graph with exact source spans.
 """
 from __future__ import annotations
 
@@ -14,7 +13,13 @@ from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA = "drakon-ada/source-observation/v1"
+SCHEMA = "drakon-ada/control-flow-observation/v1"
+
+SUPPORTED_ACTION_KINDS = {
+    "AssignStmt",
+    "CallStmt",
+    "NullStmt",
+}
 
 
 class ObservationError(RuntimeError):
@@ -51,14 +56,202 @@ def source_span(node) -> dict:
     }
 
 
-def normalized_kind(ada_kind: str) -> str:
-    if ada_kind == "IfStmt":
-        return "decision"
-    if ada_kind in {"WhileLoopStmt", "ForLoopStmt", "LoopStmt"}:
-        return "loop"
-    if ada_kind in {"ReturnStmt", "ExtendedReturnStmt"}:
-        return "return"
-    return "action"
+def statement_key(statement) -> tuple:
+    span = statement.sloc_range
+    return (
+        type(statement).__name__,
+        span.start.line,
+        span.start.column,
+        span.end.line,
+        span.end.column,
+    )
+
+
+def direct_statements(container) -> list:
+    if container is None:
+        return []
+    return list(container)
+
+
+class GraphBuilder:
+    def __init__(self, body):
+        self.body_span = source_span(body)
+        self.nodes = [
+            {
+                "id": "entry",
+                "kind": "entry",
+                "origin": "synthetic",
+                "span": self.body_span,
+                "text": "entry",
+            }
+        ]
+        self.edges = []
+        self.node_ids = {}
+        self.next_node_number = 1
+
+    def add_edge(self, source: str, target: str, role: str) -> None:
+        self.edges.append({"from": source, "to": target, "role": role})
+
+    def source_node(self, statement, kind: str, *, label_node=None) -> str:
+        key = statement_key(statement)
+        existing = self.node_ids.get(key)
+        if existing is not None:
+            return existing
+
+        node_id = f"n{self.next_node_number:04d}"
+        self.next_node_number += 1
+        node = {
+            "id": node_id,
+            "kind": kind,
+            "origin": "source",
+            "ada_kind": type(statement).__name__,
+            "span": source_span(statement),
+            "text": statement.text,
+        }
+        if label_node is not None:
+            node["label"] = label_node.text
+            node["label_span"] = source_span(label_node)
+        self.node_ids[key] = node_id
+        self.nodes.append(node)
+        return node_id
+
+    def register_sequence(self, statements) -> None:
+        """Register supported source nodes in deterministic source preorder."""
+        for statement in direct_statements(statements):
+            ada_kind = type(statement).__name__
+            if ada_kind in SUPPORTED_ACTION_KINDS:
+                self.source_node(statement, "action")
+            elif ada_kind == "ReturnStmt":
+                self.source_node(statement, "return")
+            elif ada_kind == "IfStmt":
+                if len(statement.f_alternatives) != 0:
+                    raise ObservationError(
+                        "unsupported control-flow construct ElsifStmtPart "
+                        f"at {source_span(statement)}"
+                    )
+                self.source_node(
+                    statement, "decision", label_node=statement.f_cond_expr
+                )
+                self.register_sequence(statement.f_then_stmts)
+                if statement.f_else_part is not None:
+                    self.register_sequence(statement.f_else_part.f_stmts)
+            elif ada_kind == "WhileLoopStmt":
+                self.source_node(
+                    statement, "loop", label_node=statement.f_spec.f_expr
+                )
+                self.register_sequence(statement.f_stmts)
+            else:
+                raise ObservationError(
+                    f"unsupported control-flow statement {ada_kind} "
+                    f"at {source_span(statement)}"
+                )
+
+    def build_sequence(
+        self, statements, continuation: str, continuation_role: str = "next"
+    ) -> str:
+        """Build one structured sequence backwards toward its continuation."""
+        current = continuation
+        current_role = continuation_role
+        for statement in reversed(direct_statements(statements)):
+            ada_kind = type(statement).__name__
+            node_id = self.node_ids[statement_key(statement)]
+
+            if ada_kind in SUPPORTED_ACTION_KINDS:
+                self.add_edge(node_id, current, current_role)
+                current = node_id
+                current_role = "next"
+            elif ada_kind == "ReturnStmt":
+                self.add_edge(node_id, "exit", "return")
+                current = node_id
+                current_role = "next"
+            elif ada_kind == "IfStmt":
+                then_entry = self.build_sequence(
+                    statement.f_then_stmts, current, current_role
+                )
+                if statement.f_else_part is None:
+                    else_entry = current
+                else:
+                    else_entry = self.build_sequence(
+                        statement.f_else_part.f_stmts, current, current_role
+                    )
+                self.add_edge(node_id, then_entry, "true")
+                self.add_edge(node_id, else_entry, "false")
+                current = node_id
+                current_role = "next"
+            elif ada_kind == "WhileLoopStmt":
+                body_entry = self.build_sequence(
+                    statement.f_stmts, node_id, "back"
+                )
+                self.add_edge(node_id, body_entry, "loop_body")
+                self.add_edge(node_id, current, "loop_exit")
+                current = node_id
+                current_role = "next"
+            else:
+                raise AssertionError(
+                    f"unsupported statement reached graph builder: {ada_kind}"
+                )
+        return current
+
+    def finish(self, statements) -> dict:
+        self.register_sequence(statements)
+        self.nodes.append(
+            {
+                "id": "exit",
+                "kind": "exit",
+                "origin": "synthetic",
+                "span": self.body_span,
+                "text": "exit",
+            }
+        )
+        first = self.build_sequence(statements, "exit")
+        self.add_edge("entry", first, "next")
+
+        node_order = {node["id"]: index for index, node in enumerate(self.nodes)}
+        role_order = {
+            "next": 0,
+            "true": 1,
+            "false": 2,
+            "loop_body": 3,
+            "loop_exit": 4,
+            "back": 5,
+            "return": 6,
+        }
+        self.edges.sort(
+            key=lambda edge: (
+                node_order[edge["from"]],
+                role_order[edge["role"]],
+                node_order[edge["to"]],
+            )
+        )
+
+        graph = {
+            "entry_node": "entry",
+            "exit_node": "exit",
+            "nodes": self.nodes,
+            "edges": self.edges,
+        }
+        validate_graph(graph)
+        return graph
+
+
+def validate_graph(graph: dict) -> None:
+    ids = [node["id"] for node in graph["nodes"]]
+    if len(ids) != len(set(ids)):
+        raise ObservationError("normalized graph contains duplicate node ids")
+
+    node_ids = set(ids)
+    for endpoint in ("entry_node", "exit_node"):
+        if graph[endpoint] not in node_ids:
+            raise ObservationError(f"normalized graph has missing {endpoint}")
+
+    seen_edges = set()
+    for edge in graph["edges"]:
+        if edge["from"] not in node_ids or edge["to"] not in node_ids:
+            raise ObservationError(f"normalized graph has dangling edge: {edge}")
+        key = (edge["from"], edge["to"], edge["role"])
+        if key in seen_edges:
+            raise ObservationError(f"normalized graph has duplicate edge: {edge}")
+        seen_edges.add(key)
 
 
 def observe(source: Path, source_root: Path, charset: str = "utf-8", lal=None) -> dict:
@@ -81,32 +274,32 @@ def observe(source: Path, source_root: Path, charset: str = "utf-8", lal=None) -
     bodies = unit.root.findall(lal.SubpBody)
     if len(bodies) != 1:
         raise ObservationError(
-            "Phase O1 observes exactly one SubpBody per source file; "
+            "Phase O2 observes exactly one SubpBody per source file; "
             f"found {len(bodies)}"
         )
 
     body = bodies[0]
-    spec = body.f_subp_spec
-    name_node = spec.f_subp_name
+    name_node = body.f_subp_spec.f_subp_name
     if name_node is None:
         raise ObservationError("subprogram body has no explicit source name")
 
-    nodes = []
-    for index, statement in enumerate(body.findall(lal.Stmt), start=1):
-        ada_kind = type(statement).__name__
-        nodes.append(
-            {
-                "id": f"n{index:04d}",
-                "kind": normalized_kind(ada_kind),
-                "ada_kind": ada_kind,
-                "span": source_span(statement),
-                "text": statement.text,
-            }
+    handled = body.f_stmts
+    if handled is None:
+        raise ObservationError("subprogram body has no handled statements")
+    if len(handled.f_exceptions) != 0:
+        raise ObservationError(
+            "exception handlers are unsupported in the Phase O2 control-flow slice"
+        )
+    if handled.f_finally_part is not None:
+        raise ObservationError(
+            "finally blocks are unsupported in the Phase O2 control-flow slice"
         )
 
+    graph = GraphBuilder(body).finish(handled.f_stmts)
     source_bytes = source.read_bytes()
     return {
         "schema": SCHEMA,
+        "complete": True,
         "frontend": {
             "name": "libadalang",
             "version": getattr(lal, "__version__", "unknown"),
@@ -120,13 +313,13 @@ def observe(source: Path, source_root: Path, charset: str = "utf-8", lal=None) -
             "name": name_node.text,
             "span": source_span(body),
         },
-        "nodes": nodes,
+        **graph,
     }
 
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description="Emit a Libadalang-backed source observation as JSON"
+        description="Emit a Libadalang-backed normalized control-flow observation"
     )
     parser.add_argument("source", type=Path, help="Ada source file to observe")
     parser.add_argument(
