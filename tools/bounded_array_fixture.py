@@ -33,8 +33,9 @@ FOLD_ACTION = "Total := Total + Items (Index);\nIndex := Index + 1;"
 # than from probe-specific magic numbers. DRAKON Editor's headless unit-test
 # window measures text at 6 units per character and 20 units per line, while
 # action.fit uses measured width (with a minimum of 50) and measured height as
-# the action icon's w/h fields. Production Tk font metrics are still checked by
-# the human visual-review gate before this diagram can become canonical.
+# the action icon's w/h fields. This only establishes deterministic fixture
+# geometry: production Tk font rendering remains a separate human visual-review
+# gate before this diagram can become canonical.
 _UPSTREAM_TEST_CHAR_WIDTH = 6
 _UPSTREAM_TEST_LINE_HEIGHT = 20
 _UPSTREAM_ACTION_MIN_WIDTH = 50
