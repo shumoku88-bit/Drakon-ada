@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused Phase-A1 gate for the temporary bounded-array DRAKON witness."""
+"""Focused gate for the canonical Phase-A1 bounded retained-sequence witness."""
 from pathlib import Path
 import os
 import re
@@ -12,12 +12,20 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tools.bounded_array_fixture import LOOP_INVARIANT, WEAK_LOOP_INVARIANT, materialize
-
 os.chdir(ROOT)
 WORK = ROOT / "build/bounded-array-support"
 EVIDENCE = WORK / "evidence"
+CANONICAL_SOURCE = ROOT / "examples/loam-bounded-changes-probe/array_fold.drn"
 SOURCE = WORK / "array_fold.drn"
+
+LOOP_INVARIANT = (
+    "Index >= 1 and then Index <= 4 and then "
+    "((Index = 1 and then Total = 0) or else "
+    "(Index = 2 and then Total = Items (1)) or else "
+    "(Index = 3 and then Total = Items (1) + Items (2)) or else "
+    "(Index = 4 and then Total = Items (1) + Items (2) + Items (3)))"
+)
+WEAK_LOOP_INVARIANT = "Index >= 1 and then Index <= 4"
 
 PROOF_FLAGS = [
     "--mode=all",
@@ -152,7 +160,7 @@ run(
     EVIDENCE / "generation-tests.txt",
 )
 
-materialize(SOURCE)
+shutil.copyfile(CANONICAL_SOURCE, SOURCE)
 runner = [
     os.environ.get("TCLSH", "tclsh"),
     "integration/drakon-editor/generate.tcl",

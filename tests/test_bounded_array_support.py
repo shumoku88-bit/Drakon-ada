@@ -1,27 +1,41 @@
-"""Qualify the smallest array/local surface before adding a canonical LOAM sequence diagram."""
+"""Qualify the canonical Phase-A1 bounded retained-sequence witness."""
 from pathlib import Path
+import hashlib
 import os
+import shutil
 import sqlite3
 import subprocess
 import tempfile
 import unittest
 
-from tools.bounded_array_fixture import (
-    FOLD_ACTION,
-    INIT_ACTION,
-    headless_action_fit,
-    materialize,
+ROOT = Path(__file__).resolve().parents[1]
+CANONICAL_SOURCE = (
+    ROOT / "examples/loam-bounded-changes-probe/array_fold.drn"
 )
 
-ROOT = Path(__file__).resolve().parents[1]
+INIT_ACTION = "Index := 1;\nTotal := 0;"
+FOLD_ACTION = "Total := Total + Items (Index);\nIndex := Index + 1;"
+
+
+def headless_action_fit(text: str) -> tuple[int, int]:
+    """Pinned dummy metric -> p.measure_text -> action.fit regression."""
+    lines = text.split("\n") or [""]
+    measured_width = max((len(line) * 6 for line in lines), default=0)
+    measured_height = 20 * max(1, len(lines))
+    snap_up = lambda value: ((value + 9) // 10) * 10
+    return max(50, snap_up(measured_width // 2) + 10), snap_up(
+        measured_height // 2
+    ) + 10
 
 
 class BoundedArraySupportTests(unittest.TestCase):
     def setUp(self):
+        self.source_digest = hashlib.sha256(CANONICAL_SOURCE.read_bytes()).digest()
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.work = Path(self.tmp.name)
-        self.source = materialize(self.work / "array_fold.drn")
+        self.source = self.work / "array_fold.drn"
+        shutil.copyfile(CANONICAL_SOURCE, self.source)
 
     def generate(self, success=True):
         out = self.work / "generated"
@@ -53,10 +67,11 @@ class BoundedArraySupportTests(unittest.TestCase):
         self.assertIn("Total := Total + Items (Index);", body)
         self.assertIn("pragma Loop_Variant (Decreases => 5 - Index);", body)
         self.assertIn("Always_Terminates => True", spec)
+        self.assertEqual(
+            self.source_digest, hashlib.sha256(CANONICAL_SOURCE.read_bytes()).digest()
+        )
 
-    def test_upstream_headless_fit_is_not_the_gui_display_contract(self):
-        # These are the exact half-extents produced by the pinned upstream
-        # headless measure -> p.measure_text -> action.fit path.
+    def test_headless_fit_is_not_the_canonical_gui_geometry(self):
         self.assertEqual(headless_action_fit(INIT_ACTION), (50, 30))
         self.assertEqual(headless_action_fit(FOLD_ACTION), (110, 30))
 
@@ -64,13 +79,11 @@ class BoundedArraySupportTests(unittest.TestCase):
             rows = db.execute(
                 "select text, w, h from items where type='action'"
             ).fetchall()
-
         geometry = {text: (width, height) for text, width, height in rows}
-        # Actual Mac Editor Tidy up -> persisted SQLite measurements.
         self.assertEqual(geometry[INIT_ACTION], (60, 30))
         self.assertEqual(geometry[FOLD_ACTION], (140, 30))
 
-    def test_fitted_fold_has_clearance_and_connected_graph(self):
+    def test_canonical_fold_has_clearance_and_connected_graph(self):
         with sqlite3.connect(self.source) as db:
             x, y, w, h = db.execute(
                 "select x, y, w, h from items where type='action' and text=?",
@@ -87,11 +100,13 @@ class BoundedArraySupportTests(unittest.TestCase):
             ).fetchone()
             coords = db.execute("select x, y, w, h, a from items").fetchall()
 
-        self.assertEqual((w, h), (140, 30))
+        self.assertEqual((x, y, w, h), (330, 300, 140, 30))
         self.assertTrue(all(value % 10 == 0 for row in coords for value in row))
         lanes = verticals + [(ax, ay, ah)]
-        adjacent = [lx for lx, ly, lh in lanes
-                    if lx != x and ly < y + h and ly + lh > y - h]
+        adjacent = [
+            lx for lx, ly, lh in lanes
+            if lx != x and ly < y + h and ly + lh > y - h
+        ]
         self.assertEqual(len(adjacent), 2)
         self.assertEqual(x - w - max(lx for lx in adjacent if lx < x), 10)
         self.assertEqual(min(lx for lx in adjacent if lx > x) - (x + w), 10)
