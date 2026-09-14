@@ -29,6 +29,12 @@ always_terminates True"""
 INIT_ACTION = "Index := 1;\nTotal := 0;"
 FOLD_ACTION = "Total := Total + Items (Index);\nIndex := Index + 1;"
 
+# Measured in the actual Mac DRAKON Editor: Edit > Tidy up, then read
+# persisted items.w/h through a separate SQLite connection. These are GUI
+# fit observations, not dummy headless metrics or a universal font contract.
+# See docs/bounded-array-layout-qualification.md for the capture evidence.
+GUI_ACTION_FIT = {INIT_ACTION: (60, 30), FOLD_ACTION: (140, 30)}
+
 # Mirror the pinned editor's headless fit path, not raw text metrics.
 #
 # unittest/mwindow_dummy.tcl measures text at 6 units per character and
@@ -68,7 +74,7 @@ def headless_action_fit(text: str) -> tuple[int, int]:
 
 
 def _rewrite_action(db: sqlite3.Connection, old_text: str, new_text: str) -> None:
-    width, height = headless_action_fit(new_text)
+    width, height = GUI_ACTION_FIT[new_text]
     db.execute(
         "update items set text=?, w=?, h=? where type='action' and text=?",
         (new_text, width, height, old_text),

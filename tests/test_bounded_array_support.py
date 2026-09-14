@@ -54,7 +54,7 @@ class BoundedArraySupportTests(unittest.TestCase):
         self.assertIn("pragma Loop_Variant (Decreases => 5 - Index);", body)
         self.assertIn("Always_Terminates => True", spec)
 
-    def test_rewritten_actions_use_upstream_headless_fit_geometry(self):
+    def test_upstream_headless_fit_is_not_the_gui_display_contract(self):
         # These are the exact half-extents produced by the pinned upstream
         # headless measure -> p.measure_text -> action.fit path.
         self.assertEqual(headless_action_fit(INIT_ACTION), (50, 30))
@@ -66,8 +66,9 @@ class BoundedArraySupportTests(unittest.TestCase):
             ).fetchall()
 
         geometry = {text: (width, height) for text, width, height in rows}
-        self.assertEqual(geometry[INIT_ACTION], (50, 30))
-        self.assertEqual(geometry[FOLD_ACTION], (110, 30))
+        # Actual Mac Editor Tidy up -> persisted SQLite measurements.
+        self.assertEqual(geometry[INIT_ACTION], (60, 30))
+        self.assertEqual(geometry[FOLD_ACTION], (140, 30))
 
     def test_fitted_fold_has_clearance_and_connected_graph(self):
         with sqlite3.connect(self.source) as db:
@@ -86,7 +87,7 @@ class BoundedArraySupportTests(unittest.TestCase):
             ).fetchone()
             coords = db.execute("select x, y, w, h, a from items").fetchall()
 
-        self.assertEqual((w, h), (110, 30))
+        self.assertEqual((w, h), (140, 30))
         self.assertTrue(all(value % 10 == 0 for row in coords for value in row))
         lanes = verticals + [(ax, ay, ah)]
         adjacent = [lx for lx, ly, lh in lanes
