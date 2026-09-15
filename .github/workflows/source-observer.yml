@@ -85,9 +85,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          VENV="$OBSERVER_RUNTIME/venv"
-          LIBDIR="$OBSERVER_RUNTIME/lib"
-          rm -rf "$OBSERVER_RUNTIME"
+          RUNTIME_ROOT="$GITHUB_WORKSPACE/$OBSERVER_RUNTIME"
+          VENV="$RUNTIME_ROOT/venv"
+          LIBDIR="$RUNTIME_ROOT/lib"
+          rm -rf "$RUNTIME_ROOT"
           mkdir -p "$LIBDIR"
 
           python -m venv "$VENV"
@@ -111,44 +112,56 @@ jobs:
             -exec cp -Lf {} "$LIBDIR/" \;
 
           # Resolve the Ada runtime from the exact compiler selected by this
-          # Libadalang workspace. Never flatten the whole GNAT toolchain: dSYM
-          # bundles contain same-named Mach-O debug companions that can overwrite
-          # the real runtime dylibs.
+          # Libadalang workspace. Do not guess a versioned dylib name: search
+          # only that compiler's toolchain root, prune dSYM bundles, and accept
+          # only loadable Mach-O shared libraries.
           WORKSPACE_GCC="$(alr exec -- which gcc)"
           if [[ -z "$WORKSPACE_GCC" || ! -x "$WORKSPACE_GCC" ]]; then
             echo "could not resolve the Libadalang workspace compiler" >&2
             exit 1
           fi
-          GNAT_MAJOR="$(alr exec -- gcc -dumpversion | cut -d. -f1)"
-          GNAT_RUNTIME_NAME="libgnat-${GNAT_MAJOR}.dylib"
-          GNARL_RUNTIME_NAME="libgnarl-${GNAT_MAJOR}.dylib"
-          GNAT_RUNTIME="$(alr exec -- gcc -print-file-name="$GNAT_RUNTIME_NAME")"
-          GNARL_RUNTIME="$(alr exec -- gcc -print-file-name="$GNARL_RUNTIME_NAME")"
+          TOOLCHAIN_ROOT="$(cd "$(dirname "$WORKSPACE_GCC")/.." && pwd -P)"
 
           echo "Libadalang workspace compiler: $WORKSPACE_GCC"
+          echo "GNAT toolchain root: $TOOLCHAIN_ROOT"
           alr exec -- gnat --version | head -1
-          echo "Ada runtime: $GNAT_RUNTIME"
-          echo "Tasking runtime: $GNARL_RUNTIME"
 
-          for runtime in "$GNAT_RUNTIME" "$GNARL_RUNTIME"; do
-            if [[ ! -f "$runtime" || "$runtime" == "$(basename "$runtime")" ]]; then
-              echo "GNAT runtime could not be resolved: $runtime" >&2
-              exit 1
+          found_gnat=false
+          found_gnarl=false
+          while IFS= read -r runtime; do
+            if ! file -L "$runtime" | grep -q 'dynamically linked shared library'; then
+              echo "Skipping non-loadable runtime candidate: $runtime" >&2
+              file -L "$runtime" >&2 || true
+              continue
             fi
-            if ! file "$runtime" | grep -q 'dynamically linked shared library'; then
-              echo "resolved GNAT runtime is not a loadable dylib: $runtime" >&2
-              file "$runtime" >&2 || true
-              exit 1
-            fi
+
+            echo "Ada runtime candidate: $runtime"
             cp -Lf "$runtime" "$LIBDIR/"
-          done
+            case "$(basename "$runtime")" in
+              libgnat*.dylib) found_gnat=true ;;
+              libgnarl*.dylib) found_gnarl=true ;;
+            esac
+          done < <(
+            find "$TOOLCHAIN_ROOT" \
+              -path '*.dSYM' -prune -o \
+              \( -type f -o -type l \) \
+              \( -name 'libgnat*.dylib' -o -name 'libgnarl*.dylib' \) \
+              -print
+          )
+
+          if [[ "$found_gnat" != true || "$found_gnarl" != true ]]; then
+            echo "GNAT runtime dylibs were not found under $TOOLCHAIN_ROOT" >&2
+            find "$TOOLCHAIN_ROOT" \
+              -path '*.dSYM' -prune -o \
+              \( -name 'libgnat*' -o -name 'libgnarl*' \) \
+              -print >&2 || true
+            exit 1
+          fi
 
           for required in \
             libadalang.dylib \
             libgnatcoll_projects.dylib \
-            liblangkit_support.dylib \
-            "$GNAT_RUNTIME_NAME" \
-            "$GNARL_RUNTIME_NAME"
+            liblangkit_support.dylib
           do
             if [[ ! -f "$LIBDIR/$required" ]]; then
               echo "required runtime library not found: $required" >&2
@@ -159,11 +172,11 @@ jobs:
 
           printf '%s\n' \
             'libadalang=26.0.0' \
-            "gnat-major=$GNAT_MAJOR" \
+            "gnat=$(alr exec -- gcc -dumpfullversion -dumpversion)" \
             'python=3.14.7' \
-            > "$OBSERVER_RUNTIME/manifest.txt"
+            > "$RUNTIME_ROOT/manifest.txt"
           echo "Prepared $(find "$LIBDIR" -maxdepth 1 -type f -name '*.dylib' | wc -l | tr -d ' ') dylibs"
-          cat "$OBSERVER_RUNTIME/manifest.txt"
+          cat "$RUNTIME_ROOT/manifest.txt"
 
       - name: Save Libadalang observer runtime
         if: steps.observer-runtime-cache.outputs.cache-hit != 'true'
