@@ -104,12 +104,8 @@ class DrakonWriterTests(unittest.TestCase):
         mapping = load_map(output)
         by_id = {node["node_id"]: node for node in mapping["nodes"]}
 
-        # The loop completion is pushed below the complete loop body.
         self.assertEqual(by_id["n0007"]["physical"]["rank"], 6)
         self.assertEqual(by_id["exit"]["physical"]["rank"], 8)
-
-        # The inner loop gets lane 1, the enclosing bypass lane 2, and the
-        # later branch can reuse lane 1 after the loop has merged.
         self.assertEqual(by_id["n0003"]["physical"]["lane"], 2)
         self.assertEqual(by_id["n0005"]["physical"]["lane"], 1)
         self.assertEqual(by_id["n0006"]["physical"]["lane"], 1)
@@ -121,10 +117,8 @@ class DrakonWriterTests(unittest.TestCase):
             arrows = db.execute(
                 "SELECT x, y, w, h, a, b FROM items WHERE type='arrow'"
             ).fetchall()
-            self.assertEqual(arrows, [(630, 400, 390, 360, 130, 0)])
+            self.assertEqual(arrows, [(630, 400, 390, 340, 130, 0)])
 
-            # YES/body branches are intrinsic to the DRAKON if icon. The
-            # outer decision reaches lane 2 and the loop reaches lane 1.
             if_rows = db.execute(
                 "SELECT text, x, y, w, h, a, b "
                 "FROM items WHERE type='if' ORDER BY item_id"
@@ -132,6 +126,51 @@ class DrakonWriterTests(unittest.TestCase):
             self.assertEqual(if_rows[0][-2:], (460, 0))
             self.assertEqual(if_rows[1][-2:], (200, 0))
             self.assertEqual(if_rows[2][-2:], (200, 0))
+
+    def test_branch_merge_and_loop_return_use_distinct_horizontal_corridors(self):
+        output = self.write()
+        with sqlite3.connect(output) as db:
+            horizontals = db.execute(
+                "SELECT x, y, w FROM items WHERE type='horizontal' ORDER BY y, x"
+            ).fetchall()
+            arrows = db.execute(
+                "SELECT x, y, w, h, a FROM items WHERE type='arrow'"
+            ).fetchall()
+
+        self.assertEqual([row[1] for row in horizontals], [780, 1020])
+        self.assertEqual(len(arrows), 1)
+        x, y, w, height, bottom_width = arrows[0]
+        arrow_segments = [
+            (y, x - w, x),
+            (y + height, x - bottom_width, x),
+        ]
+        for hx, hy, hw in horizontals:
+            hleft, hright = sorted((hx, hx + hw))
+            for ay, aleft, aright in arrow_segments:
+                if hy != ay:
+                    continue
+                self.assertTrue(
+                    hright < aleft or aright < hleft,
+                    f"horizontal route at y={hy} overlaps loop return",
+                )
+
+    def test_shared_branch_and_loop_corridor_fails_closed(self):
+        old_merge = WRITE_DRAKON.MERGE_MARGIN
+        old_loop = WRITE_DRAKON.LOOP_RETURN_MARGIN
+        WRITE_DRAKON.MERGE_MARGIN = 40
+        WRITE_DRAKON.LOOP_RETURN_MARGIN = 40
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                with self.assertRaisesRegex(
+                    WRITE_DRAKON.WriterError,
+                    "branch merge and loop return share a horizontal corridor",
+                ):
+                    WRITE_DRAKON.write_projection(
+                        fixture(), Path(directory) / "bad.drn"
+                    )
+        finally:
+            WRITE_DRAKON.MERGE_MARGIN = old_merge
+            WRITE_DRAKON.LOOP_RETURN_MARGIN = old_loop
 
     def test_source_trace_and_semantic_edges_survive_in_diagram_metadata(self):
         projection = fixture()
@@ -175,8 +214,6 @@ class DrakonWriterTests(unittest.TestCase):
         nested["icon"] = "if"
         nested["text"] = "Nested = 1"
 
-        # Make the nested node a valid decision first, so the failure proves
-        # the O3b physical-layout boundary rather than a malformed role set.
         projection["edges"] = [
             edge
             for edge in projection["edges"]

@@ -13,7 +13,7 @@ INPUT_SCHEMA = "drakon-ada/drakon-projection/v1"
 MAP_SCHEMA = "drakon-ada/drn-projection-map/v1"
 BASE_X, BASE_Y = 240, 100
 BRANCH_SPACING, RANK_SPACING = 260, 120
-MERGE_GAP, RETURN_GAP = 40, 130
+MERGE_MARGIN, LOOP_RETURN_MARGIN, RETURN_GAP = 20, 20, 130
 ICON_SIZE = {"beginend": (100, 20), "action": (100, 20), "if": (60, 20)}
 ROLES = {"next", "true", "false", "loop_body", "loop_exit", "back", "return"}
 
@@ -210,6 +210,37 @@ def _merge(intervals):
     return out
 
 
+def _ranges_touch(a1, a2, b1, b2):
+    left1, right1 = sorted((a1, a2))
+    left2, right2 = sorted((b1, b2))
+    return max(left1, left2) <= min(right1, right2)
+
+
+def _check_route_separation(horizontals, arrows):
+    for y, intervals in horizontals.items():
+        normalized = [(min(a, b), max(a, b)) for a, b in intervals if a != b]
+        for index, first in enumerate(normalized):
+            for second in normalized[index + 1:]:
+                if _ranges_touch(first[0], first[1], second[0], second[1]):
+                    raise WriterError(
+                        f"horizontal routes share corridor y={y}: {first} and {second}"
+                    )
+
+        for start, end in normalized:
+            for arrow in arrows:
+                top = (arrow["x"] - arrow["w"], arrow["x"])
+                bottom = (arrow["x"] - arrow["a"], arrow["x"])
+                for arrow_y, segment in (
+                    (arrow["y"], top),
+                    (arrow["y"] + arrow["h"], bottom),
+                ):
+                    if y == arrow_y and _ranges_touch(
+                        start, end, segment[0], segment[1]
+                    ):
+                        raise WriterError(
+                            "branch merge and loop return share a horizontal corridor"
+                        )
+
 def _schema(db):
     db.executescript("""
     CREATE TABLE info(key TEXT PRIMARY KEY,value TEXT);
@@ -260,7 +291,7 @@ def write_projection(projection, output: Path):
             if branch_x is None or sg["x"] != branch_x or by_id[source]["icon"] != "action":
                 raise WriterError(f"{source}->{target}: invalid loop return source")
             corridor = branch_x + RETURN_GAP
-            bottom = sg["y"] + sg["h"] + MERGE_GAP
+            bottom = sg["y"] + sg["h"] + LOOP_RETURN_MARGIN
             top = tg["y"] - RANK_SPACING // 2
             top_width, bottom_width = corridor - tg["x"], corridor - branch_x
             if min(top_width, bottom_width) < 30 or top >= tg["y"] - tg["h"]:
@@ -287,12 +318,14 @@ def write_projection(projection, output: Path):
         else:
             if tg["lane"] != 0:
                 raise WriterError(f"{source}->{target}: cross-lane forward merge must target main lane")
-            join = target_top - MERGE_GAP
+            join = target_top - MERGE_MARGIN
             if join <= source_bottom:
                 raise WriterError(f"{source}->{target}: no room for cross-lane merge")
             v(sg["x"], source_bottom, join)
             h(join, sg["x"], tg["x"])
             v(tg["x"], join, target_top)
+
+    _check_route_separation(horizontals, arrows)
 
     icon_rows, node_to_item, item_id = [], {}, 1
     for node in nodes:
