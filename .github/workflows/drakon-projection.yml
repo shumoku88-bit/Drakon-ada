@@ -4,12 +4,16 @@ on:
   pull_request:
     paths:
       - '.github/workflows/drakon-projection.yml'
+      - 'tools/observe_ada.py'
+      - 'tools/observe_to_drakon.py'
       - 'tools/project_drakon.py'
       - 'tools/write_drakon.py'
+      - 'tests/test_observe_to_drakon.py'
       - 'tests/test_drakon_projection.py'
       - 'tests/test_drakon_writer.py'
       - 'integration/drakon-editor/verify_projection.tcl'
       - 'examples/drakon-projection/**'
+      - 'docs/end-to-end-observation.md'
       - 'docs/drakon-projection.md'
       - 'docs/drakon-writer.md'
       - 'tools/setup.py'
@@ -34,10 +38,11 @@ jobs:
         with:
           python-version: '3.14'
 
-      - name: Test deterministic projection and SQLite writer
+      - name: Test projection, SQLite writer, and orchestration
         run: |
           python -m unittest discover -s tests -p 'test_drakon_projection.py' -v
           python -m unittest discover -s tests -p 'test_drakon_writer.py' -v
+          python -m unittest discover -s tests -p 'test_observe_to_drakon.py' -v
 
       - name: Install pinned-editor verification dependencies
         run: |
