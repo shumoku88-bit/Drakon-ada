@@ -14,7 +14,7 @@ jobs:
     timeout-minutes: 50
 
     env:
-      OBSERVER_RUNTIME: ${{ runner.temp }}/source-observer-runtime
+      OBSERVER_RUNTIME: .observer-runtime
       OBSERVER_CACHE_KEY: source-observer-lal-26.0.0-macos-x64-py3147-v1
 
     steps:
@@ -30,7 +30,7 @@ jobs:
         id: observer-runtime-cache
         uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}/source-observer-runtime
+          path: .observer-runtime
           key: ${{ env.OBSERVER_CACHE_KEY }}
 
       - name: Set up Alire
@@ -169,7 +169,7 @@ jobs:
         if: steps.observer-runtime-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
         with:
-          path: ${{ runner.temp }}/source-observer-runtime
+          path: .observer-runtime
           key: ${{ env.OBSERVER_CACHE_KEY }}
 
       - name: Activate observer runtime
