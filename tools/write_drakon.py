@@ -473,19 +473,25 @@ def write_projection(projection: dict[str, Any], output: Path) -> dict[str, Any]
             if by_id[source]["icon"] != "action":
                 raise WriterError(f"{source}: back source must render as an action icon")
             corridor_x = branch_x + RETURN_GAP
-            source_right = sg["x"] + sg["w"]
-            bottom_offset = corridor_x - source_right
-            if bottom_offset < 30:
+            return_bottom = sg["y"] + sg["h"] + MERGE_GAP
+            return_width = corridor_x - branch_x
+            if return_width < 30:
                 raise WriterError(f"{source}: not enough room for DRAKON return arrow")
             if sg["y"] <= tg["y"]:
                 raise WriterError(f"{source}->{target}: back source must be below loop")
+
+            # DRAKON actions remain on a vertical skewer. The return arrow is a
+            # U-shaped connector whose lower-left corner meets that skewer
+            # below the final body action and whose upper-left arrowhead meets
+            # the loop decision's intrinsic right arm.
+            add_vertical(branch_x, sg["y"] + sg["h"], return_bottom)
             arrows.append(
                 {
                     "x": corridor_x,
                     "y": tg["y"],
-                    "w": corridor_x - branch_x,
-                    "h": sg["y"] - tg["y"],
-                    "a": bottom_offset,
+                    "w": return_width,
+                    "h": return_bottom - tg["y"],
+                    "a": return_width,
                     "b": 0,
                 }
             )
