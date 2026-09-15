@@ -2,6 +2,12 @@ name: Source Observer Qualification
 
 on:
   pull_request:
+    paths:
+      - '.github/workflows/source-observer.yml'
+      - 'tools/observe_ada.py'
+      - 'tools/qualify_source_observer.py'
+      - 'tests/test_source_observation.py'
+      - 'examples/source-observation/**'
   workflow_dispatch:
 
 permissions:
