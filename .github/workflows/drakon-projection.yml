@@ -1,0 +1,31 @@
+name: DRAKON Projection
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/drakon-projection.yml'
+      - 'tools/project_drakon.py'
+      - 'tests/test_drakon_projection.py'
+      - 'docs/drakon-projection.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-projection:
+    name: Normalized CFG to DRAKON projection
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Test deterministic projection
+        run: python -m unittest discover -s tests -p 'test_drakon_projection.py' -v
