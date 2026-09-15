@@ -57,12 +57,12 @@ Examples currently rejected include:
 - `elsif`;
 - `case` and other unqualified statement kinds;
 - exception handlers;
-- `finally` blocks;
 - other loop forms until their exact semantics are added deliberately.
 
-This is intentionally conservative. When hra-n exposes a required construct, add
-that distinction because a real observed program needs it, then extend tests and
-the renderer-independent model before teaching the DRAKON renderer about it.
+This is intentionally conservative. When a real observed program exposes a
+required construct, add that distinction because the source needs it, then extend
+tests and the renderer-independent model before teaching the DRAKON renderer
+about it.
 
 ## Graph construction
 
@@ -94,9 +94,9 @@ python3 tools/observe_ada.py \
 
 The Phase O1 source-root and charset boundaries remain unchanged.
 
-## Tests
+## Tests and qualification
 
-`tests/test_source_observation.py` now checks:
+`tests/test_source_observation.py` checks:
 
 - exact deterministic node order for the fixture;
 - exact expected edge relation;
@@ -108,13 +108,22 @@ The Phase O1 source-root and charset boundaries remain unchanged.
 - rejection of exception handlers;
 - source-root rejection before frontend use.
 
-Libadalang-backed tests still skip when the Python bindings are unavailable. This
-PR establishes the graph semantics but does not yet claim Libadalang as a
-qualified mandatory dependency on the development platform.
+Local unit-test discovery may skip Libadalang-backed tests when the Python bindings
+are unavailable. The qualification workflow does not accept that state: it
+provides Libadalang 26.0.0 and runs `tools/qualify_source_observer.py`, where a
+missing or unloadable frontend is fatal.
+
+The Phase O2 slice is qualified on the Intel macOS CI lane with Libadalang 26.0.0,
+GNAT 15.3.0 and Python 3.14.7. Qualification checks the exact test module, runs the
+observer twice for byte-for-byte determinism, validates the expected schema and
+graph surface, and emits machine-readable evidence.
 
 ## Next checkpoint
 
-Before Phase O3 DRAKON rendering, reproduce this graph with Libadalang installed
-on the development machine and inspect the emitted JSON directly. Once that
-frontier is confirmed, the first renderer should consume only this graph and
-source identity. It must not reparse Ada or invent a second control-flow model.
+Phase O3 may now project this normalized graph into DRAKON. The renderer should
+consume only this graph and source identity. It must not reparse Ada or invent a
+second control-flow model.
+
+The CI packaging used to provision Libadalang is infrastructure rather than part
+of the observer semantics. It can be simplified independently without reopening
+the Phase O2 graph contract.
