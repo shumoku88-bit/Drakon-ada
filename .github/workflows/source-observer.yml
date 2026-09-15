@@ -25,8 +25,9 @@ jobs:
         run: |
           set -euo pipefail
           # Libadalang's dependency closure is large enough to exceed Alire's
-          # normal first timeout on a fresh hosted runner. Keep the selected
-          # GNAT 16.1.0 toolchain and give the solver time to finish.
+          # normal first timeout on a fresh hosted runner. Give the solver time
+          # to select the compiler required by the Libadalang workspace rather
+          # than forcing the outer setup-alire default into that solution.
           alr -n settings --global --set solver.timeout 120
           mkdir -p "$RUNNER_TEMP/libadalang-source"
           cd "$RUNNER_TEMP/libadalang-source"
@@ -92,11 +93,9 @@ jobs:
 
           mkdir -p "$LIBDIR"
 
-          # Alire places many relocatable library names behind symlinks. The
-          # previous `-type f` filter silently skipped those names, so dyld could
-          # load libadalang itself but not its GNATCOLL dependencies. Copy both
-          # regular files and symlinks, dereferencing symlinks into one flat,
-          # disposable runtime directory for this qualification process.
+          # Alire places many relocatable library names behind symlinks. Copy
+          # regular files and symlinks from this dependency solution into one
+          # disposable runtime directory for qualification.
           find "$HOME/.local/share/alire/builds" \
             -name '*.dylib' \( -type f -o -type l \) \
             -exec cp -Lf {} "$LIBDIR/" \;
@@ -104,13 +103,34 @@ jobs:
             -name '*.dylib' \( -type f -o -type l \) \
             -exec cp -Lf {} "$LIBDIR/" \;
 
+          # The outer setup-alire toolchain and the compiler selected inside
+          # the Libadalang workspace need not be the same version. Ask Alire
+          # which compiler this workspace actually uses, then copy runtime
+          # dylibs only from that exact toolchain. This avoids mixing GNAT
+          # runtimes from multiple installed toolchains.
+          WORKSPACE_GCC="$(alr exec -- which gcc)"
+          if [[ -z "$WORKSPACE_GCC" || ! -x "$WORKSPACE_GCC" ]]; then
+            echo "could not resolve the Libadalang workspace compiler" >&2
+            exit 1
+          fi
+          WORKSPACE_GNAT_ROOT="$(dirname "$(dirname "$WORKSPACE_GCC")")"
+          echo "Libadalang workspace compiler: $WORKSPACE_GCC"
+          alr exec -- gnat --version | head -1
+          echo "Libadalang workspace GNAT root: $WORKSPACE_GNAT_ROOT"
+
+          find "$WORKSPACE_GNAT_ROOT" \
+            -name '*.dylib' \( -type f -o -type l \) \
+            -exec cp -Lf {} "$LIBDIR/" \;
+
           for required in \
             libadalang.dylib \
             libgnatcoll_projects.dylib \
-            liblangkit_support.dylib
+            liblangkit_support.dylib \
+            libgnat-15.dylib \
+            libgnarl-15.dylib
           do
             if [[ ! -f "$LIBDIR/$required" ]]; then
-              echo "required relocatable library not found: $required" >&2
+              echo "required runtime library not found: $required" >&2
               echo "collected dylibs:" >&2
               ls -1 "$LIBDIR" >&2 || true
               exit 1
