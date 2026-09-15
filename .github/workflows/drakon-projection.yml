@@ -47,6 +47,18 @@ jobs:
       - name: Fetch pinned DRAKON Editor
         run: python tools/setup.py
 
+      - name: Inspect qualified countdown geometry
+        run: |
+          python - <<'PY'
+          import sqlite3
+          path = 'examples/control-flow/countdown/countdown.drn'
+          with sqlite3.connect(path) as db:
+              for row in db.execute(
+                  "select item_id,type,text,x,y,w,h,a,b from items order by item_id"
+              ):
+                  print(row)
+          PY
+
       - name: Write qualification DRAKON document
         run: |
           mkdir -p build/drakon-projection
