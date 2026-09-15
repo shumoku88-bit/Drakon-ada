@@ -5,8 +5,15 @@ on:
     paths:
       - '.github/workflows/drakon-projection.yml'
       - 'tools/project_drakon.py'
+      - 'tools/write_drakon.py'
       - 'tests/test_drakon_projection.py'
+      - 'tests/test_drakon_writer.py'
+      - 'integration/drakon-editor/verify_projection.tcl'
+      - 'examples/drakon-projection/**'
       - 'docs/drakon-projection.md'
+      - 'docs/drakon-writer.md'
+      - 'tools/setup.py'
+      - 'upstream.lock'
   workflow_dispatch:
 
 permissions:
@@ -27,5 +34,27 @@ jobs:
         with:
           python-version: '3.14'
 
-      - name: Test deterministic projection
-        run: python -m unittest discover -s tests -p 'test_drakon_projection.py' -v
+      - name: Test deterministic projection and SQLite writer
+        run: |
+          python -m unittest discover -s tests -p 'test_drakon_projection.py' -v
+          python -m unittest discover -s tests -p 'test_drakon_writer.py' -v
+
+      - name: Install pinned-editor verification dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tcl tcllib libsqlite3-tcl
+
+      - name: Fetch pinned DRAKON Editor
+        run: python tools/setup.py
+
+      - name: Write qualification DRAKON document
+        run: |
+          mkdir -p build/drakon-projection
+          python tools/write_drakon.py \
+            examples/drakon-projection/observation_fixture_projection.json \
+            build/drakon-projection/observation_fixture.drn
+
+      - name: Verify generated graph with pinned DRAKON Editor
+        run: |
+          tclsh integration/drakon-editor/verify_projection.tcl \
+            build/drakon-projection/observation_fixture.drn
