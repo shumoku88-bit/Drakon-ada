@@ -11,30 +11,41 @@ jobs:
   qualify-source-observer:
     name: Libadalang CFG on Intel macOS
     runs-on: macos-15-intel
-    timeout-minutes: 45
+    timeout-minutes: 50
+
+    env:
+      OBSERVER_RUNTIME: ${{ runner.temp }}/source-observer-runtime
+      OBSERVER_CACHE_KEY: source-observer-lal-26.0.0-macos-x64-py3147-v1
 
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Set up Python 3.14.7
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14.7'
+
+      - name: Restore Libadalang observer runtime
+        id: observer-runtime-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/source-observer-runtime
+          key: ${{ env.OBSERVER_CACHE_KEY }}
+
       - name: Set up Alire
+        if: steps.observer-runtime-cache.outputs.cache-hit != 'true'
         uses: alire-project/setup-alire@v6
 
       - name: Fetch and build Libadalang 26.0.0
+        if: steps.observer-runtime-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
-          # Libadalang's dependency closure is large enough to exceed Alire's
-          # normal first timeout on a fresh hosted runner. Give the solver time
-          # to select the compiler required by the Libadalang workspace rather
-          # than forcing the outer setup-alire default into that solution.
           alr -n settings --global --set solver.timeout 120
           mkdir -p "$RUNNER_TEMP/libadalang-source"
           cd "$RUNNER_TEMP/libadalang-source"
 
-          # Retry only the acquisition boundary. GitHub release/archive fetches
-          # can fail transiently (for example HTTP 5xx); semantic qualification
-          # below remains strictly fail-closed.
           fetched=false
           for attempt in 1 2 3; do
             if alr -n get libadalang=26.0.0; then
@@ -60,9 +71,6 @@ jobs:
           cd "$LAL_DIR"
           alr build --release -- -j0 -XLIBRARY_TYPE=relocatable
 
-          # The Alire build directory contains compiled Langkit_Support artifacts,
-          # not the Langkit Python source tree. The release directory is the
-          # original Langkit source archive and contains pyproject.toml.
           LANGKIT_SOURCE="$(find "$HOME/.local/share/alire/releases" -maxdepth 1 -type d -name 'langkit_support_26.0.0_*' -print -quit)"
           if [[ -z "$LANGKIT_SOURCE" || ! -f "$LANGKIT_SOURCE/pyproject.toml" ]]; then
             echo "Langkit 26.0.0 source release was not found" >&2
@@ -72,74 +80,108 @@ jobs:
           echo "LAL_DIR=$LAL_DIR" >> "$GITHUB_ENV"
           echo "LANGKIT_SOURCE=$LANGKIT_SOURCE" >> "$GITHUB_ENV"
 
-      - name: Install Python bindings and expose shared libraries
+      - name: Assemble Libadalang observer runtime
+        if: steps.observer-runtime-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
-          VENV="$RUNNER_TEMP/libadalang-venv"
-          LIBDIR="$RUNNER_TEMP/libadalang-libs"
-          python3 -m venv "$VENV"
+          VENV="$OBSERVER_RUNTIME/venv"
+          LIBDIR="$OBSERVER_RUNTIME/lib"
+          rm -rf "$OBSERVER_RUNTIME"
+          mkdir -p "$LIBDIR"
+
+          python -m venv "$VENV"
           source "$VENV/bin/activate"
           python -m pip install --upgrade pip
-
-          # Install the Langkit Python package from the source release. Its
-          # pyproject declares the runtime Python dependencies needed by the
-          # generated Libadalang bindings; the separate requirements files are
-          # developer/test inputs and are not present in Alire's build tree.
           python -m pip install "$LANGKIT_SOURCE"
 
           cd "$LAL_DIR"
           python -m pip install ./python
 
-          mkdir -p "$LIBDIR"
-
-          # Alire places many relocatable library names behind symlinks. Copy
-          # regular files and symlinks from this dependency solution into one
-          # disposable runtime directory for qualification.
+          # Collect Libadalang and its Alire-built relocatable dependencies, but
+          # prune dSYM bundles. Their DWARF payloads can have the same basename
+          # as a dylib and are not loadable runtime libraries.
           find "$HOME/.local/share/alire/builds" \
+            -path '*.dSYM' -prune -o \
             -name '*.dylib' \( -type f -o -type l \) \
             -exec cp -Lf {} "$LIBDIR/" \;
           find "$LAL_DIR" \
+            -path '*.dSYM' -prune -o \
             -name '*.dylib' \( -type f -o -type l \) \
             -exec cp -Lf {} "$LIBDIR/" \;
 
-          # The outer setup-alire toolchain and the compiler selected inside
-          # the Libadalang workspace need not be the same version. Ask Alire
-          # which compiler this workspace actually uses, then copy runtime
-          # dylibs only from that exact toolchain. This avoids mixing GNAT
-          # runtimes from multiple installed toolchains.
+          # Resolve the Ada runtime from the exact compiler selected by this
+          # Libadalang workspace. Never flatten the whole GNAT toolchain: dSYM
+          # bundles contain same-named Mach-O debug companions that can overwrite
+          # the real runtime dylibs.
           WORKSPACE_GCC="$(alr exec -- which gcc)"
           if [[ -z "$WORKSPACE_GCC" || ! -x "$WORKSPACE_GCC" ]]; then
             echo "could not resolve the Libadalang workspace compiler" >&2
             exit 1
           fi
-          WORKSPACE_GNAT_ROOT="$(dirname "$(dirname "$WORKSPACE_GCC")")"
+          GNAT_MAJOR="$(alr exec -- gcc -dumpversion | cut -d. -f1)"
+          GNAT_RUNTIME_NAME="libgnat-${GNAT_MAJOR}.dylib"
+          GNARL_RUNTIME_NAME="libgnarl-${GNAT_MAJOR}.dylib"
+          GNAT_RUNTIME="$(alr exec -- gcc -print-file-name="$GNAT_RUNTIME_NAME")"
+          GNARL_RUNTIME="$(alr exec -- gcc -print-file-name="$GNARL_RUNTIME_NAME")"
+
           echo "Libadalang workspace compiler: $WORKSPACE_GCC"
           alr exec -- gnat --version | head -1
-          echo "Libadalang workspace GNAT root: $WORKSPACE_GNAT_ROOT"
+          echo "Ada runtime: $GNAT_RUNTIME"
+          echo "Tasking runtime: $GNARL_RUNTIME"
 
-          find "$WORKSPACE_GNAT_ROOT" \
-            -name '*.dylib' \( -type f -o -type l \) \
-            -exec cp -Lf {} "$LIBDIR/" \;
+          for runtime in "$GNAT_RUNTIME" "$GNARL_RUNTIME"; do
+            if [[ ! -f "$runtime" || "$runtime" == "$(basename "$runtime")" ]]; then
+              echo "GNAT runtime could not be resolved: $runtime" >&2
+              exit 1
+            fi
+            if ! file "$runtime" | grep -q 'dynamically linked shared library'; then
+              echo "resolved GNAT runtime is not a loadable dylib: $runtime" >&2
+              file "$runtime" >&2 || true
+              exit 1
+            fi
+            cp -Lf "$runtime" "$LIBDIR/"
+          done
 
           for required in \
             libadalang.dylib \
             libgnatcoll_projects.dylib \
             liblangkit_support.dylib \
-            libgnat-15.dylib \
-            libgnarl-15.dylib
+            "$GNAT_RUNTIME_NAME" \
+            "$GNARL_RUNTIME_NAME"
           do
             if [[ ! -f "$LIBDIR/$required" ]]; then
               echo "required runtime library not found: $required" >&2
-              echo "collected dylibs:" >&2
               ls -1 "$LIBDIR" >&2 || true
               exit 1
             fi
           done
 
-          echo "Collected $(find "$LIBDIR" -maxdepth 1 -type f -name '*.dylib' | wc -l | tr -d ' ') dylibs for observer qualification"
-          echo "$VENV/bin" >> "$GITHUB_PATH"
-          echo "DYLD_FALLBACK_LIBRARY_PATH=$LIBDIR:/usr/local/lib:/usr/lib" >> "$GITHUB_ENV"
+          printf '%s\n' \
+            'libadalang=26.0.0' \
+            "gnat-major=$GNAT_MAJOR" \
+            'python=3.14.7' \
+            > "$OBSERVER_RUNTIME/manifest.txt"
+          echo "Prepared $(find "$LIBDIR" -maxdepth 1 -type f -name '*.dylib' | wc -l | tr -d ' ') dylibs"
+          cat "$OBSERVER_RUNTIME/manifest.txt"
+
+      - name: Save Libadalang observer runtime
+        if: steps.observer-runtime-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/source-observer-runtime
+          key: ${{ env.OBSERVER_CACHE_KEY }}
+
+      - name: Activate observer runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "$OBSERVER_RUNTIME/manifest.txt"
+          test -x "$OBSERVER_RUNTIME/venv/bin/python"
+          test -f "$OBSERVER_RUNTIME/lib/libadalang.dylib"
+          cat "$OBSERVER_RUNTIME/manifest.txt"
+          echo "$OBSERVER_RUNTIME/venv/bin" >> "$GITHUB_PATH"
+          echo "DYLD_FALLBACK_LIBRARY_PATH=$OBSERVER_RUNTIME/lib:/usr/local/lib:/usr/lib" >> "$GITHUB_ENV"
 
       - name: Qualify normalized control-flow observation
         shell: bash
