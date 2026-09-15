@@ -101,3 +101,40 @@ does not invoke the suspended DRAKON-to-Ada generator lane.
 
 The frozen JSON fixture under `examples/drakon-projection/` is a derived test
 artifact. It is not authoritative source.
+
+## O3c geometry separation and semantic round-trip
+
+A human inspection of the first generated fixture exposed a visual ambiguity:
+the loop-return bottom segment and an unrelated branch merge could occupy the
+same horizontal corridor. Although upstream accepted the graph, the picture
+made two independent control paths look connected.
+
+O3c keeps the semantic projection unchanged and tightens the physical renderer:
+
+- branch merges use a corridor close to their target icon,
+- loop-return bottoms use a separate corridor close to the loop-body tail,
+- unrelated horizontal routes may not overlap or touch on the same Y
+  coordinate,
+- a branch merge may not share a horizontal segment with the top or bottom of
+  a DRAKON return arrow.
+
+The writer fails closed if those geometric separation rules cannot be met.
+
+Qualification now also checks semantic round-trip against the pinned DRAKON
+Editor interpretation. After `graph::verify_all`, the verifier reads upstream's
+in-memory `links` graph, collapses line/joint vertices until the next mapped
+semantic icon, reconstructs normalized edge roles, and compares the result with
+the projection map embedded in the `.drn`.
+
+The role reconstruction is mechanical:
+
+- decision: down=`false`, right=`true`,
+- loop: down=`loop_exit`, right=`loop_body`,
+- action: forward=`next`, rank-decreasing edge=`back`,
+- return=`return`,
+- entry=`next`.
+
+This is deliberately not source regeneration. Ada/SPARK remains authoritative;
+the check only proves that the derived DRAKON geometry is interpreted by the
+pinned editor as the same normalized control-flow graph that entered the
+writer.
