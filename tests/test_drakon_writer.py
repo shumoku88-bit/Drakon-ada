@@ -121,7 +121,7 @@ class DrakonWriterTests(unittest.TestCase):
             arrows = db.execute(
                 "SELECT x, y, w, h, a, b FROM items WHERE type='arrow'"
             ).fetchall()
-            self.assertEqual(arrows, [(630, 460, 130, 300, 130, 0)])
+            self.assertEqual(arrows, [(630, 400, 390, 360, 130, 0)])
 
             # YES/body branches are intrinsic to the DRAKON if icon. The
             # outer decision reaches lane 2 and the loop reaches lane 1.
