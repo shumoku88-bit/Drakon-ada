@@ -55,15 +55,21 @@ jobs:
             echo "Libadalang crate directory was not created" >&2
             exit 1
           fi
+
           cd "$LAL_DIR"
-          alr build --release -- -XLIBRARY_TYPE=relocatable
-          LANGKIT_DIR="$(find "$HOME/.local/share/alire/builds" -maxdepth 1 -type d -name 'langkit_support_*' -print -quit)"
-          if [[ -z "$LANGKIT_DIR" ]]; then
-            echo "langkit_support build directory was not found" >&2
+          alr build --release -- -j0 -XLIBRARY_TYPE=relocatable
+
+          # The Alire build directory contains compiled Langkit_Support artifacts,
+          # not the Langkit Python source tree. The release directory is the
+          # original Langkit source archive and contains pyproject.toml.
+          LANGKIT_SOURCE="$(find "$HOME/.local/share/alire/releases" -maxdepth 1 -type d -name 'langkit_support_26.0.0_*' -print -quit)"
+          if [[ -z "$LANGKIT_SOURCE" || ! -f "$LANGKIT_SOURCE/pyproject.toml" ]]; then
+            echo "Langkit 26.0.0 source release was not found" >&2
             exit 1
           fi
+
           echo "LAL_DIR=$LAL_DIR" >> "$GITHUB_ENV"
-          echo "LANGKIT_DIR=$LANGKIT_DIR" >> "$GITHUB_ENV"
+          echo "LANGKIT_SOURCE=$LANGKIT_SOURCE" >> "$GITHUB_ENV"
 
       - name: Install Python bindings and expose shared libraries
         shell: bash
@@ -75,10 +81,11 @@ jobs:
           source "$VENV/bin/activate"
           python -m pip install --upgrade pip
 
-          cd "$LANGKIT_DIR"
-          python -m pip install -r requirements-github.txt
-          python -m pip install -r requirements-pypi.txt
-          python -m pip install .
+          # Install the Langkit Python package from the source release. Its
+          # pyproject declares the runtime Python dependencies needed by the
+          # generated Libadalang bindings; the separate requirements files are
+          # developer/test inputs and are not present in Alire's build tree.
+          python -m pip install "$LANGKIT_SOURCE"
 
           cd "$LAL_DIR"
           python -m pip install ./python
