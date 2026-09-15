@@ -91,13 +91,33 @@ jobs:
           python -m pip install ./python
 
           mkdir -p "$LIBDIR"
-          find "$HOME/.local/share/alire/builds" -type f -name '*.dylib' -exec cp -f {} "$LIBDIR/" \;
-          find "$LAL_DIR" -type f -name 'libadalang.dylib' -exec cp -f {} "$LIBDIR/" \;
-          if [[ ! -f "$LIBDIR/libadalang.dylib" ]]; then
-            echo "relocatable libadalang.dylib was not found" >&2
-            exit 1
-          fi
 
+          # Alire places many relocatable library names behind symlinks. The
+          # previous `-type f` filter silently skipped those names, so dyld could
+          # load libadalang itself but not its GNATCOLL dependencies. Copy both
+          # regular files and symlinks, dereferencing symlinks into one flat,
+          # disposable runtime directory for this qualification process.
+          find "$HOME/.local/share/alire/builds" \
+            -name '*.dylib' \( -type f -o -type l \) \
+            -exec cp -Lf {} "$LIBDIR/" \;
+          find "$LAL_DIR" \
+            -name '*.dylib' \( -type f -o -type l \) \
+            -exec cp -Lf {} "$LIBDIR/" \;
+
+          for required in \
+            libadalang.dylib \
+            libgnatcoll_projects.dylib \
+            liblangkit_support.dylib
+          do
+            if [[ ! -f "$LIBDIR/$required" ]]; then
+              echo "required relocatable library not found: $required" >&2
+              echo "collected dylibs:" >&2
+              ls -1 "$LIBDIR" >&2 || true
+              exit 1
+            fi
+          done
+
+          echo "Collected $(find "$LIBDIR" -maxdepth 1 -type f -name '*.dylib' | wc -l | tr -d ' ') dylibs for observer qualification"
           echo "$VENV/bin" >> "$GITHUB_PATH"
           echo "DYLD_FALLBACK_LIBRARY_PATH=$LIBDIR:/usr/local/lib:/usr/lib" >> "$GITHUB_ENV"
 
