@@ -15,7 +15,7 @@ jobs:
 
     env:
       OBSERVER_RUNTIME: .observer-runtime
-      OBSERVER_CACHE_KEY: source-observer-lal-26.0.0-macos-x64-py3147-v1
+      OBSERVER_CACHE_KEY: source-observer-lal-26.0.0-macos-x64-py3147-v2
 
     steps:
       - name: Checkout
@@ -111,8 +111,8 @@ jobs:
             -name '*.dylib' \( -type f -o -type l \) \
             -exec cp -Lf {} "$LIBDIR/" \;
 
-          # Resolve the Ada runtime from the exact compiler selected by this
-          # Libadalang workspace. Do not guess a versioned dylib name: search
+          # Resolve compiler runtimes from the exact compiler selected by this
+          # Libadalang workspace. Do not guess versioned dylib locations: search
           # only that compiler's toolchain root, prune dSYM bundles, and accept
           # only loadable Mach-O shared libraries.
           WORKSPACE_GCC="$(alr exec -- which gcc)"
@@ -128,6 +128,7 @@ jobs:
 
           found_gnat=false
           found_gnarl=false
+          found_gcc_runtime=false
           while IFS= read -r runtime; do
             if ! file -L "$runtime" | grep -q 'dynamically linked shared library'; then
               echo "Skipping non-loadable runtime candidate: $runtime" >&2
@@ -135,25 +136,26 @@ jobs:
               continue
             fi
 
-            echo "Ada runtime candidate: $runtime"
+            echo "Compiler runtime candidate: $runtime"
             cp -Lf "$runtime" "$LIBDIR/"
             case "$(basename "$runtime")" in
               libgnat*.dylib) found_gnat=true ;;
               libgnarl*.dylib) found_gnarl=true ;;
+              libgcc_s*.dylib) found_gcc_runtime=true ;;
             esac
           done < <(
             find "$TOOLCHAIN_ROOT" \
               -path '*.dSYM' -prune -o \
               \( -type f -o -type l \) \
-              \( -name 'libgnat*.dylib' -o -name 'libgnarl*.dylib' \) \
+              \( -name 'libgnat*.dylib' -o -name 'libgnarl*.dylib' -o -name 'libgcc_s*.dylib' \) \
               -print
           )
 
-          if [[ "$found_gnat" != true || "$found_gnarl" != true ]]; then
-            echo "GNAT runtime dylibs were not found under $TOOLCHAIN_ROOT" >&2
+          if [[ "$found_gnat" != true || "$found_gnarl" != true || "$found_gcc_runtime" != true ]]; then
+            echo "required compiler runtime dylibs were not found under $TOOLCHAIN_ROOT" >&2
             find "$TOOLCHAIN_ROOT" \
               -path '*.dSYM' -prune -o \
-              \( -name 'libgnat*' -o -name 'libgnarl*' \) \
+              \( -name 'libgnat*' -o -name 'libgnarl*' -o -name 'libgcc_s*' \) \
               -print >&2 || true
             exit 1
           fi
@@ -161,7 +163,8 @@ jobs:
           for required in \
             libadalang.dylib \
             libgnatcoll_projects.dylib \
-            liblangkit_support.dylib
+            liblangkit_support.dylib \
+            libgcc_s.1.1.dylib
           do
             if [[ ! -f "$LIBDIR/$required" ]]; then
               echo "required runtime library not found: $required" >&2
@@ -192,6 +195,7 @@ jobs:
           test -f "$OBSERVER_RUNTIME/manifest.txt"
           test -x "$OBSERVER_RUNTIME/venv/bin/python"
           test -f "$OBSERVER_RUNTIME/lib/libadalang.dylib"
+          test -f "$OBSERVER_RUNTIME/lib/libgcc_s.1.1.dylib"
           cat "$OBSERVER_RUNTIME/manifest.txt"
           echo "$OBSERVER_RUNTIME/venv/bin" >> "$GITHUB_PATH"
           echo "DYLD_FALLBACK_LIBRARY_PATH=$OBSERVER_RUNTIME/lib:/usr/local/lib:/usr/lib" >> "$GITHUB_ENV"
