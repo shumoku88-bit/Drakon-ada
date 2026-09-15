@@ -2,6 +2,12 @@ name: Source Observer Qualification
 
 on:
   pull_request:
+    paths:
+      - '.github/workflows/source-observer.yml'
+      - 'tools/observe_ada.py'
+      - 'tools/qualify_source_observer.py'
+      - 'tests/test_source_observation.py'
+      - 'examples/source-observation/**'
   workflow_dispatch:
 
 permissions:
@@ -13,10 +19,6 @@ jobs:
     runs-on: macos-15-intel
     timeout-minutes: 50
 
-    env:
-      OBSERVER_RUNTIME: .observer-runtime
-      OBSERVER_CACHE_KEY: source-observer-lal-26.0.0-macos-x64-py3147-v2
-
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -26,19 +28,10 @@ jobs:
         with:
           python-version: '3.14.7'
 
-      - name: Restore Libadalang observer runtime
-        id: observer-runtime-cache
-        uses: actions/cache/restore@v5
-        with:
-          path: .observer-runtime
-          key: ${{ env.OBSERVER_CACHE_KEY }}
-
       - name: Set up Alire
-        if: steps.observer-runtime-cache.outputs.cache-hit != 'true'
         uses: alire-project/setup-alire@v6
 
-      - name: Fetch and build Libadalang 26.0.0
-        if: steps.observer-runtime-cache.outputs.cache-hit != 'true'
+      - name: Build Libadalang 26.0.0
         shell: bash
         run: |
           set -euo pipefail
@@ -77,133 +70,17 @@ jobs:
             exit 1
           fi
 
-          echo "LAL_DIR=$LAL_DIR" >> "$GITHUB_ENV"
-          echo "LANGKIT_SOURCE=$LANGKIT_SOURCE" >> "$GITHUB_ENV"
-
-      - name: Assemble Libadalang observer runtime
-        if: steps.observer-runtime-cache.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          RUNTIME_ROOT="$GITHUB_WORKSPACE/$OBSERVER_RUNTIME"
-          VENV="$RUNTIME_ROOT/venv"
-          LIBDIR="$RUNTIME_ROOT/lib"
-          rm -rf "$RUNTIME_ROOT"
-          mkdir -p "$LIBDIR"
-
-          python -m venv "$VENV"
-          source "$VENV/bin/activate"
-          python -m pip install --upgrade pip
           python -m pip install "$LANGKIT_SOURCE"
-
-          cd "$LAL_DIR"
-          python -m pip install ./python
-
-          # Collect Libadalang and its Alire-built relocatable dependencies, but
-          # prune dSYM bundles. Their DWARF payloads can have the same basename
-          # as a dylib and are not loadable runtime libraries.
-          find "$HOME/.local/share/alire/builds" \
-            -path '*.dSYM' -prune -o \
-            -name '*.dylib' \( -type f -o -type l \) \
-            -exec cp -Lf {} "$LIBDIR/" \;
-          find "$LAL_DIR" \
-            -path '*.dSYM' -prune -o \
-            -name '*.dylib' \( -type f -o -type l \) \
-            -exec cp -Lf {} "$LIBDIR/" \;
-
-          # Resolve compiler runtimes from the exact compiler selected by this
-          # Libadalang workspace. Do not guess versioned dylib locations: search
-          # only that compiler's toolchain root, prune dSYM bundles, and accept
-          # only loadable Mach-O shared libraries.
-          WORKSPACE_GCC="$(alr exec -- which gcc)"
-          if [[ -z "$WORKSPACE_GCC" || ! -x "$WORKSPACE_GCC" ]]; then
-            echo "could not resolve the Libadalang workspace compiler" >&2
-            exit 1
-          fi
-          TOOLCHAIN_ROOT="$(cd "$(dirname "$WORKSPACE_GCC")/.." && pwd -P)"
-
-          echo "Libadalang workspace compiler: $WORKSPACE_GCC"
-          echo "GNAT toolchain root: $TOOLCHAIN_ROOT"
-          alr exec -- gnat --version | head -1
-
-          found_gnat=false
-          found_gnarl=false
-          found_gcc_runtime=false
-          while IFS= read -r runtime; do
-            if ! file -L "$runtime" | grep -q 'dynamically linked shared library'; then
-              echo "Skipping non-loadable runtime candidate: $runtime" >&2
-              file -L "$runtime" >&2 || true
-              continue
-            fi
-
-            echo "Compiler runtime candidate: $runtime"
-            cp -Lf "$runtime" "$LIBDIR/"
-            case "$(basename "$runtime")" in
-              libgnat*.dylib) found_gnat=true ;;
-              libgnarl*.dylib) found_gnarl=true ;;
-              libgcc_s*.dylib) found_gcc_runtime=true ;;
-            esac
-          done < <(
-            find "$TOOLCHAIN_ROOT" \
-              -path '*.dSYM' -prune -o \
-              \( -type f -o -type l \) \
-              \( -name 'libgnat*.dylib' -o -name 'libgnarl*.dylib' -o -name 'libgcc_s*.dylib' \) \
-              -print
-          )
-
-          if [[ "$found_gnat" != true || "$found_gnarl" != true || "$found_gcc_runtime" != true ]]; then
-            echo "required compiler runtime dylibs were not found under $TOOLCHAIN_ROOT" >&2
-            find "$TOOLCHAIN_ROOT" \
-              -path '*.dSYM' -prune -o \
-              \( -name 'libgnat*' -o -name 'libgnarl*' -o -name 'libgcc_s*' \) \
-              -print >&2 || true
-            exit 1
-          fi
-
-          for required in \
-            libadalang.dylib \
-            libgnatcoll_projects.dylib \
-            liblangkit_support.dylib \
-            libgcc_s.1.1.dylib
-          do
-            if [[ ! -f "$LIBDIR/$required" ]]; then
-              echo "required runtime library not found: $required" >&2
-              ls -1 "$LIBDIR" >&2 || true
-              exit 1
-            fi
-          done
-
-          printf '%s\n' \
-            'libadalang=26.0.0' \
-            "gnat=$(alr exec -- gcc -dumpfullversion -dumpversion)" \
-            'python=3.14.7' \
-            > "$RUNTIME_ROOT/manifest.txt"
-          echo "Prepared $(find "$LIBDIR" -maxdepth 1 -type f -name '*.dylib' | wc -l | tr -d ' ') dylibs"
-          cat "$RUNTIME_ROOT/manifest.txt"
-
-      - name: Save Libadalang observer runtime
-        if: steps.observer-runtime-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v5
-        with:
-          path: .observer-runtime
-          key: ${{ env.OBSERVER_CACHE_KEY }}
-
-      - name: Activate observer runtime
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -f "$OBSERVER_RUNTIME/manifest.txt"
-          test -x "$OBSERVER_RUNTIME/venv/bin/python"
-          test -f "$OBSERVER_RUNTIME/lib/libadalang.dylib"
-          test -f "$OBSERVER_RUNTIME/lib/libgcc_s.1.1.dylib"
-          cat "$OBSERVER_RUNTIME/manifest.txt"
-          echo "$OBSERVER_RUNTIME/venv/bin" >> "$GITHUB_PATH"
-          echo "DYLD_FALLBACK_LIBRARY_PATH=$OBSERVER_RUNTIME/lib:/usr/local/lib:/usr/lib" >> "$GITHUB_ENV"
+          echo "LAL_DIR=$LAL_DIR" >> "$GITHUB_ENV"
 
       - name: Qualify normalized control-flow observation
         shell: bash
         run: |
           set -euo pipefail
+          cd "$LAL_DIR"
+          eval "$(python -m langkit.scripts.lkm printenv)"
           python -c 'import libadalang as lal; print("Libadalang:", getattr(lal, "__version__", "unknown"), lal.__file__)'
+
+          cd "$GITHUB_WORKSPACE"
           python tools/qualify_source_observer.py --evidence build/evidence/source-observer.json
           cat build/evidence/source-observer.json
