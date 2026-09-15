@@ -290,10 +290,6 @@ def observe(source: Path, source_root: Path, charset: str = "utf-8", lal=None) -
         raise ObservationError(
             "exception handlers are unsupported in the Phase O2 control-flow slice"
         )
-    if handled.f_finally_part is not None:
-        raise ObservationError(
-            "finally blocks are unsupported in the Phase O2 control-flow slice"
-        )
 
     graph = GraphBuilder(body).finish(handled.f_stmts)
     source_bytes = source.read_bytes()
